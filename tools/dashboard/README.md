@@ -83,8 +83,8 @@ https://github.com/chromedays/autobattler/settings/hooks → **Add webhook**:
 **9. 첫 빌드 채우기**
 
 열린 PR과 master는 5분 안에 재동기화로 대시보드에 나타난다. 빌드는 각 브랜치의 다음 push에 올라간다. 바로 채우려면
-https://github.com/chromedays/autobattler/actions/workflows/build.yml 에서 master의 가장 최근 실행을 열고 **Re-run all jobs**를 누른다.
-열린 PR 브랜치도 같은 식으로 다시 실행하면 된다.
+https://github.com/chromedays/autobattler/actions/workflows/build.yml 에서 **Run workflow**를 누르고 브랜치로 master를 고른다. 열린 PR
+브랜치도 같은 식으로 실행하면 된다. **Re-run all jobs**는 쓰지 않는다: push 이벤트를 그때 그대로(그때의 기본 브랜치까지) 다시 쓰기 때문이다.
 
 ### 엔진 저장소에서 옮겨 올 때 (한 번)
 
@@ -199,8 +199,9 @@ https://github.com/chromedays/autobattler/settings/hooks → **Add webhook**:
 **9. Fill in the first builds**
 
 Open pull requests and master appear on the dashboard within 5 minutes, from the resync. Their builds are uploaded at each branch's
-next push. To fill them at once, open the newest master run at https://github.com/chromedays/autobattler/actions/workflows/build.yml and
-press **Re-run all jobs**; do the same for open pull requests' branches.
+next push. To fill them at once, press **Run workflow** at https://github.com/chromedays/autobattler/actions/workflows/build.yml with master
+as the branch; do the same for open pull requests' branches. Not **Re-run all jobs**: it replays the push event as it was, the
+default branch of that time included.
 
 ### Moving over from the engine repository (once)
 

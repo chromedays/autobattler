@@ -76,10 +76,11 @@ jobs:
 
   # The build dashboard (docs/specs/build_dashboard.md): the auto-battler's Release and Debug builds of the default branch and
   # of every branch with an open pull request go to Cloudflare R2, which the dashboard's Worker serves. It runs only for pushes
-  # to this repository, so code from a fork never runs with the secrets; until they are set (tools/dashboard/README.md) it
-  # publishes nothing.
+  # to this repository and for runs started by hand (Run workflow), so code from a fork never runs with the secrets; until they
+  # are set (tools/dashboard/README.md) it publishes nothing. A re-run replays its push as it was, default branch included, so a
+  # branch's build is published again with Run workflow, not Re-run.
   publish:
-    if: github.event_name == 'push' && github.ref_type == 'branch'
+    if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.ref_type == 'branch'
     needs: web
     runs-on: ubuntu-24.04
     permissions:

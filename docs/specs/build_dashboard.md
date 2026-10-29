@@ -84,7 +84,8 @@ Durable Object가 저장소(`state` 키 하나)에 둔다. 브랜치마다:
 
 `.github/workflows/build.yml`:
 
-- `publish`: 이 저장소의 push마다 `web` 뒤에 돈다. master이거나 열린 PR이 있는 브랜치면 그 실행의 `autobattler-web` 아티팩트에서
+- `publish`: 이 저장소의 push와 손으로 시작한 실행(Run workflow)마다 `web` 뒤에 돈다. Re-run은 push 이벤트를 그때 그대로 다시 쓰므로(기본
+  브랜치도) 빌드를 다시 올리려면 Run workflow를 쓴다. master이거나 열린 PR이 있는 브랜치면 그 실행의 `autobattler-web` 아티팩트에서
   `release`와 `debug`를 `publish.sh`로 올린다.
 - `publish-opened`: PR이 열리거나 다시 열리면(이 저장소의 브랜치일 때만) 그 head 커밋의 push 실행을 찾아(아직 돌면 기다려서) 그
   아티팩트를 올린다. 다시 빌드하지 않는다. push 실행의 `publish`도 올릴 수 있지만 같은 파일이라 문제없다.
