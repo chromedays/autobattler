@@ -1,9 +1,9 @@
-// The auto-battler's project file and rules (autobattler/defs.c, battle.c; docs/specs/abproj.md and battle.md, "Tests"). No
+// The auto-battler's project file and rules (src/defs.c, battle.c; docs/specs/abproj.md and battle.md, "Tests"). No
 // GPU. The format is tried only with text made here, so that changing a value in the repository's project file breaks no
 // test; that file (BATTLE_DATA_DIR/default.abproj) is only checked to read and to play a round. The rules run on small
 // scenes made here, where shells are sometimes put into the battle by hand so that one rule at a time is tried.
 
-#include "autobattler/battle.h"
+#include "battle.h"
 #include "engine/log.h"
 
 #include <math.h>

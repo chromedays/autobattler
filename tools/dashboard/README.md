@@ -42,7 +42,7 @@ Durable Object 하나, R2 버킷 하나로 돈다. 설계는 `docs/specs/build_d
 
 **5. GitHub Actions에 넣기**
 
-https://github.com/chromedays/engine/settings/secrets/actions 에서:
+https://github.com/chromedays/autobattler/settings/secrets/actions 에서:
 
 1. **Secrets** 탭 → **New repository secret**를 세 번:
    - `CLOUDFLARE_API_TOKEN`: 3단계의 토큰
@@ -54,7 +54,7 @@ https://github.com/chromedays/engine/settings/secrets/actions 에서:
 **6. Worker 배포**
 
 1. 대시보드 PR을 master에 머지한다. `dashboard` 워크플로가 Worker를 배포한다. 이미 머지했다면
-   https://github.com/chromedays/engine/actions/workflows/dashboard.yml → **Run workflow** → **Run workflow**.
+   https://github.com/chromedays/autobattler/actions/workflows/dashboard.yml → **Run workflow** → **Run workflow**.
 2. 실행이 초록으로 끝나면 `DASHBOARD_URL`을 브라우저로 연다. 빈 대시보드가 보이면 된다.
 
 **7. Worker에 비밀값 넣기**
@@ -65,12 +65,12 @@ Cloudflare 대시보드 → **Workers & Pages** → `nv-builds` → **Settings**
 - `DASHBOARD_TOKEN`: 4단계의 첫 값 (5단계와 같은 값)
 - `GITHUB_WEBHOOK_SECRET`: 4단계의 두 번째 값
 - `GITHUB_TOKEN` (권장): GitHub 읽기 전용 토큰. https://github.com/settings/personal-access-tokens/new 에서 **Fine-grained token**,
-  Repository access는 **Only select repositories** → `chromedays/engine`, Permissions는 **Actions: Read-only**, **Contents: Read-only**,
+  Repository access는 **Only select repositories** → `chromedays/autobattler`, Permissions는 **Actions: Read-only**, **Contents: Read-only**,
   **Pull requests: Read-only**. 없어도 돌지만, 5분마다의 재동기화가 Cloudflare의 공유 IP 한도에 걸릴 수 있다.
 
 **8. GitHub 웹훅**
 
-https://github.com/chromedays/engine/settings/hooks → **Add webhook**:
+https://github.com/chromedays/autobattler/settings/hooks → **Add webhook**:
 
 - **Payload URL**: `https://nv-builds.<하위 도메인>.workers.dev/webhook`
 - **Content type**: `application/json`
@@ -83,8 +83,22 @@ https://github.com/chromedays/engine/settings/hooks → **Add webhook**:
 **9. 첫 빌드 채우기**
 
 열린 PR과 master는 5분 안에 재동기화로 대시보드에 나타난다. 빌드는 각 브랜치의 다음 push에 올라간다. 바로 채우려면
-https://github.com/chromedays/engine/actions/workflows/build.yml 에서 master의 가장 최근 실행을 열고 **Re-run all jobs**를 누른다.
+https://github.com/chromedays/autobattler/actions/workflows/build.yml 에서 master의 가장 최근 실행을 열고 **Re-run all jobs**를 누른다.
 열린 PR 브랜치도 같은 식으로 다시 실행하면 된다.
+
+### 엔진 저장소에서 옮겨 올 때 (한 번)
+
+대시보드는 처음에 `chromedays/engine`에 있었다(2026-10-29에 옮김). 이미 설정한 Cloudflare 쪽(Worker `nv-builds`, R2 버킷, Durable
+Object, API 토큰)은 그대로 쓴다. 바꿀 것:
+
+1. GitHub Actions: 이 저장소의 **Secrets**에 `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`, `DASHBOARD_TOKEN`을, **Variables**에
+   `DASHBOARD_URL`을 엔진 저장소와 같은 값으로 넣는다.
+2. 기본 브랜치가 `master`인지 확인한다(`wrangler.toml`의 `DEFAULT_BRANCH`).
+3. `dashboard` 워크플로를 **Run workflow**로 한 번 돌린다. `REPO = "chromedays/autobattler"`로 Worker가 다시 배포된다.
+4. Worker 시크릿 `GITHUB_TOKEN`의 토큰에 `chromedays/autobattler` 읽기 권한을 더한다(새 토큰이면 Worker의 값을 바꾸고 **Deploy**). 이 저장소는 비공개라서
+   토큰 없이는 재동기화가 GitHub API를 읽지 못한다. 그래서 여기서는 필수다.
+5. 웹훅을 같은 Payload URL과 secret으로 이 저장소에 만들고(8단계), 엔진 저장소의 웹훅은 지운다.
+6. 엔진 저장소의 브랜치 카드는 5분마다의 재동기화가 지운다. 엔진 저장소의 시크릿은 그쪽에서 오토배틀러를 뺀 뒤 지운다.
 
 ### 로컬에서 돌리기
 
@@ -143,7 +157,7 @@ signatures). Use a password manager's generator for 40 characters or more, or ru
 
 **5. Put them in GitHub Actions**
 
-At https://github.com/chromedays/engine/settings/secrets/actions:
+At https://github.com/chromedays/autobattler/settings/secrets/actions:
 
 1. **Secrets** tab → **New repository secret**, three times:
    - `CLOUDFLARE_API_TOKEN`: the token from step 3
@@ -155,7 +169,7 @@ At https://github.com/chromedays/engine/settings/secrets/actions:
 **6. Deploy the Worker**
 
 1. Merge the dashboard's pull request into master. The `dashboard` workflow deploys the Worker. If it is already merged, open
-   https://github.com/chromedays/engine/actions/workflows/dashboard.yml → **Run workflow** → **Run workflow**.
+   https://github.com/chromedays/autobattler/actions/workflows/dashboard.yml → **Run workflow** → **Run workflow**.
 2. When the run is green, open `DASHBOARD_URL` in a browser. An empty dashboard means it worked.
 
 **7. Give the Worker its secrets**
@@ -166,13 +180,13 @@ at a time, then **Deploy**:
 - `DASHBOARD_TOKEN`: the first value from step 4 (the same as in step 5)
 - `GITHUB_WEBHOOK_SECRET`: the second value from step 4
 - `GITHUB_TOKEN` (recommended): a read-only GitHub token. At https://github.com/settings/personal-access-tokens/new, a
-  **Fine-grained token** with Repository access **Only select repositories** → `chromedays/engine`, and Permissions **Actions:
+  **Fine-grained token** with Repository access **Only select repositories** → `chromedays/autobattler`, and Permissions **Actions:
   Read-only**, **Contents: Read-only**, **Pull requests: Read-only**. It runs without one, but the resync every 5 minutes may hit
   the limit of Cloudflare's shared IP addresses.
 
 **8. GitHub webhook**
 
-https://github.com/chromedays/engine/settings/hooks → **Add webhook**:
+https://github.com/chromedays/autobattler/settings/hooks → **Add webhook**:
 
 - **Payload URL**: `https://nv-builds.<subdomain>.workers.dev/webhook`
 - **Content type**: `application/json`
@@ -185,8 +199,23 @@ https://github.com/chromedays/engine/settings/hooks → **Add webhook**:
 **9. Fill in the first builds**
 
 Open pull requests and master appear on the dashboard within 5 minutes, from the resync. Their builds are uploaded at each branch's
-next push. To fill them at once, open the newest master run at https://github.com/chromedays/engine/actions/workflows/build.yml and
+next push. To fill them at once, open the newest master run at https://github.com/chromedays/autobattler/actions/workflows/build.yml and
 press **Re-run all jobs**; do the same for open pull requests' branches.
+
+### Moving over from the engine repository (once)
+
+The dashboard was first in `chromedays/engine` (moved 2026-10-29). The Cloudflare side set up there (the `nv-builds` Worker, the R2
+bucket, the Durable Object, the API token) stays as it is. What changes:
+
+1. GitHub Actions: put `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID` and `DASHBOARD_TOKEN` in this repository's **Secrets** and
+   `DASHBOARD_URL` in its **Variables**, with the same values as the engine repository's.
+2. Check that the default branch is `master` (`DEFAULT_BRANCH` in `wrangler.toml`).
+3. Run the `dashboard` workflow once (**Run workflow**): the Worker is deployed again with `REPO = "chromedays/autobattler"`.
+4. Give the token in the Worker secret `GITHUB_TOKEN` read access to `chromedays/autobattler` (a new token: change the Worker's value
+   and **Deploy**). This repository is private, so without a token the resync cannot read GitHub's API: here it is required.
+5. Make the webhook on this repository with the same Payload URL and secret (step 8), and delete the engine repository's.
+6. The resync every 5 minutes removes the engine repository's branch cards. Delete the engine repository's secrets once the
+   auto-battler is out of it.
 
 ### Running it locally
 

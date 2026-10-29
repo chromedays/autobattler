@@ -1,5 +1,5 @@
 // The auto-battler's Korean UI strings (docs/specs/korean.md): pairs of the English text, exactly as written in the code, and its
-// Korean. The lookup is the engine's (engine/strings.h); tests/strings_test.mjs checks that every string the code wraps has a row
+// Korean. The lookup is the engine's (engine/strings.h); engine/tests/strings_test.mjs checks that every string the code wraps has a row
 // and that a row keeps its printf conversions. Unit and weapon names come from the definition files and stay English.
 
 #include "game.h"

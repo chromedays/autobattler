@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Uploads a branch's auto-battler builds to R2 and registers them with the dashboard (docs/specs/build_dashboard.md).
 # Run by CI (.github/workflows/build.yml, the publish jobs):
-#   tools/dashboard/publish.sh <dir>     <dir> holds the install of release/ and debug/ (the engine-web artifact's autobattler/)
+#   tools/dashboard/publish.sh <dir>     <dir> holds the install of release/ and debug/ (the autobattler-web artifact)
 # Environment: BRANCH, SHA, REPO, DEFAULT_BRANCH, GH_TOKEN (for gh), CLOUDFLARE_API_TOKEN, CLOUDFLARE_ACCOUNT_ID,
 # DASHBOARD_URL, DASHBOARD_TOKEN. R2_TARGET=--local writes to `wrangler dev`'s bucket instead, for a local test.
 set -euo pipefail

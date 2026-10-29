@@ -1,6 +1,8 @@
 # 빌드 대시보드
 
 상태: 구현됨, 배포 전 (2026-10-28). Cloudflare 계정과 비밀값(`tools/dashboard/README.md`)이 준비되면 쓴다. 이 스펙의 변경은 먼저 합의한다.
+2026-10-29에 엔진 저장소(`chromedays/engine`)에서 오토배틀러와 함께 이 저장소(`chromedays/autobattler`)로 옮겼다. Worker의 `REPO`가
+이 저장소다.
 
 ## 목표
 
@@ -82,8 +84,8 @@ Durable Object가 저장소(`state` 키 하나)에 둔다. 브랜치마다:
 
 `.github/workflows/build.yml`:
 
-- `publish`: 이 저장소의 push마다 `web` 뒤에 돈다. master이거나 열린 PR이 있는 브랜치면 그 실행의 `engine-web` 아티팩트에서
-  `autobattler/release`와 `autobattler/debug`를 `publish.sh`로 올린다.
+- `publish`: 이 저장소의 push마다 `web` 뒤에 돈다. master이거나 열린 PR이 있는 브랜치면 그 실행의 `autobattler-web` 아티팩트에서
+  `release`와 `debug`를 `publish.sh`로 올린다.
 - `publish-opened`: PR이 열리거나 다시 열리면(이 저장소의 브랜치일 때만) 그 head 커밋의 push 실행을 찾아(아직 돌면 기다려서) 그
   아티팩트를 올린다. 다시 빌드하지 않는다. push 실행의 `publish`도 올릴 수 있지만 같은 파일이라 문제없다.
 - 비밀값이 없으면 두 잡 모두 알림만 남기고 성공한다. 그래서 설정 전에도 CI는 초록이다.
@@ -93,8 +95,8 @@ Durable Object가 저장소(`state` 키 하나)에 둔다. 브랜치마다:
 
 `.github/workflows/dashboard.yml`: master에서 `tools/dashboard/`가 바뀌면 `wrangler deploy`로 Worker를 배포한다(수동 실행도 된다).
 
-GitHub Pages(`stage` 잡, `pages.yml`)는 대시보드가 동작하는 것을 확인한 뒤 걷어 냈다(2026-10-29). 샌드박스 빌드는 이제 어디에도
-올라가지 않고 `engine-web` 아티팩트에만 있다.
+GitHub Pages(엔진 저장소의 `stage` 잡, `pages.yml`)는 대시보드가 동작하는 것을 확인한 뒤 걷어 냈다(2026-10-29). 샌드박스 빌드는
+엔진 저장소의 `engine-web` 아티팩트에만 있다.
 
 ## 보안
 

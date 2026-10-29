@@ -6,7 +6,7 @@ compatibility_date = "2026-10-01"
 workers_dev = true
 
 [vars]
-REPO = "chromedays/engine"
+REPO = "chromedays/autobattler"
 DEFAULT_BRANCH = "master"
 
 # The page; everything it does not have (/ws, /webhook, /api/*, /builds/*) goes to the Worker.

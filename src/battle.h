@@ -31,7 +31,7 @@
 // The newest format of the project file this build reads (docs/specs/abproj.md, "Versions").
 #define ABPROJ_VERSION 1
 
-// Definitions: what autobattler/data/default.abproj says. Zero is empty.
+// Definitions: what data/default.abproj says. Zero is empty.
 
 // The rules of the `rules` block, times already in ticks.
 typedef struct BattleRules {

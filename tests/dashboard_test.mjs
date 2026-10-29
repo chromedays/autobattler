@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 import { applyBuild, applyResync, applyWebhook, emptyState, folderOf, snapshot } from '../tools/dashboard/src/state.mjs';
 
 const opts = { defaultBranch: 'master', now: Date.parse('2026-10-28T10:00:00Z') };
-const repo = { full_name: 'chromedays/engine' };
+const repo = { full_name: 'chromedays/autobattler' };
 const sha = (c) => c.repeat(40);
 const pull = (number, ref, state, extra = {}) => ({ number, title: `PR ${number}`, state, head: { ref, sha: sha('1'), repo }, ...extra });
 const push = (ref, after, message = 'A commit\n\nWith a body') => ({ ref: `refs/heads/${ref}`, after, head_commit: { message, timestamp: '2026-10-28T09:00:00Z' } });
@@ -127,7 +127,7 @@ test('folders', () => {
 test('the resync fills a new state and fixes what webhooks missed', () => {
   const s = emptyState();
   const read = {
-    repo: 'chromedays/engine',
+    repo: 'chromedays/autobattler',
     complete: true,
     branches: [{ name: 'master', commit: { sha: sha('a') } }, { name: 'x', commit: { sha: sha('b') } }, { name: 'quiet', commit: { sha: sha('c') } }],
     pulls: [pull(14, 'x', 'open'), pull(12, 'x', 'closed', { merged_at: '2026-10-01T00:00:00Z' })],

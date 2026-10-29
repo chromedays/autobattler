@@ -20,11 +20,11 @@
 
 | 파일 | 패키지 안 경로 | 내용 |
 |---|---|---|
-| `autobattler/data/default.abproj` | `/data/default.abproj` | 규칙, 유닛 정의, 스테이지 |
+| `data/default.abproj` | `/data/default.abproj` | 규칙, 유닛 정의, 스테이지 |
 
 - 확장자는 `.abproj`(auto-battler project). 텍스트이므로 일반 Git에 두고(`.gitattributes`에 LFS 패턴을 더하지 않는다), 코드처럼
   리뷰한다.
-- `nv_setup_executable`의 `PRELOAD`는 폴더(`autobattler/data@/data`) 그대로다.
+- `nv_setup_executable`의 `PRELOAD`는 폴더(`data@/data`) 그대로다.
 - 형식은 직접 만든 줄 단위 텍스트다(`battle.md`의 "서드파티 후보"에서 결정). 새 서드파티는 없다.
 
 ### 문법
@@ -161,10 +161,10 @@
 
 ### 예
 
-`autobattler/data/default.abproj`. 규칙은 전에 코드에 있던 값이다. Crawler는 2 × 2칸에 여섯인 분대다(분대의 유닛 수가 칸 수와 같을 필요는 없다).
+`data/default.abproj`. 규칙은 전에 코드에 있던 값이다. Crawler는 2 × 2칸에 여섯인 분대다(분대의 유닛 수가 칸 수와 같을 필요는 없다).
 
 ```
-# autobattler/data/default.abproj: the auto-battler's rules, units and stage (docs/specs/abproj.md)
+# data/default.abproj: the auto-battler's rules, units and stage (docs/specs/abproj.md)
 abproj_version 1
 
 rules
@@ -233,7 +233,7 @@ stage
 
 ### 읽기와 오류
 
-- `autobattler/defs.c`가 읽는다. 함수 하나다:
+- `src/defs.c`가 읽는다. 함수 하나다:
 
   ```c
   b32 defs_read_project(BattleDefs* defs, const char* file_name, const char* text, umm size);
@@ -380,11 +380,11 @@ outside this spec; see "Later").
 
 | File | Path in the package | Contents |
 |---|---|---|
-| `autobattler/data/default.abproj` | `/data/default.abproj` | Rules, unit definitions, the stage |
+| `data/default.abproj` | `/data/default.abproj` | Rules, unit definitions, the stage |
 
 - The extension is `.abproj` (auto-battler project). It is text, so it stays in plain Git (no LFS pattern in `.gitattributes`) and
   is reviewed like code.
-- `nv_setup_executable`'s `PRELOAD` keeps the folder (`autobattler/data@/data`).
+- `nv_setup_executable`'s `PRELOAD` keeps the folder (`data@/data`).
 - The format is our own line-based text (decided in `battle.md`, "Third-party candidates"). No new third-party code.
 
 ### Syntax
@@ -525,11 +525,11 @@ make right lines errors). Its unit name and numbers are still checked.
 
 ### Example
 
-`autobattler/data/default.abproj`. The rules are the values that were in code. The Crawler is a squad of six on
+`data/default.abproj`. The rules are the values that were in code. The Crawler is a squad of six on
 2 × 2 cells (a squad's units need not match its cells).
 
 ```
-# autobattler/data/default.abproj: the auto-battler's rules, units and stage (docs/specs/abproj.md)
+# data/default.abproj: the auto-battler's rules, units and stage (docs/specs/abproj.md)
 abproj_version 1
 
 rules
@@ -599,7 +599,7 @@ stage
 
 ### Reading and errors
 
-- `autobattler/defs.c` reads it, with one function:
+- `src/defs.c` reads it, with one function:
 
   ```c
   b32 defs_read_project(BattleDefs* defs, const char* file_name, const char* text, umm size);

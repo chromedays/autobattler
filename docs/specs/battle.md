@@ -121,8 +121,8 @@ A의 틱 순서: 이전 위치 기록, 대상 다시 고르기, 이동과 분리
 하지만 C 코드는 다시 컴파일되지 않는다.
 
 변경(2026-10-05): 두 파일(`units.txt`, `stage.txt`)과 코드에 있던 규칙 상수(칸 크기, 격자, 구역, 라운드 시간, 중력, 재선택 주기,
-멈춤 비율, 최소 피해 비율)를 **프로젝트 파일 하나**, `autobattler/data/default.abproj`로 합쳤다. 문법, `rules`, `unit`, `stage`의 키
-표, 버전, 읽기와 오류, 테스트는 `docs/specs/abproj.md`에 있다. 읽는 함수는 `defs_read_project`(`autobattler/defs.c`)다. B에서
+멈춤 비율, 최소 피해 비율)를 **프로젝트 파일 하나**, `data/default.abproj`로 합쳤다. 문법, `rules`, `unit`, `stage`의 키
+표, 버전, 읽기와 오류, 테스트는 `docs/specs/abproj.md`에 있다. 읽는 함수는 `defs_read_project`(`src/defs.c`)다. B에서
 더할 키(`layer`, `size`, `altitude`, 여러 `weapon`, `ability jump`, `prop` 등)도 거기 "나중에"에 적혀 있다. 분대의 `squad`와
 `footprint`는 형식에 더했다(2026-10-11, 버전은 1 그대로).
 
@@ -414,34 +414,33 @@ float는 같은 빌드 안에서 결정적이고 `sinf` 같은 libm 함수도 �
 
 ### 코드 위치
 
-샌드박스(`sandbox/`)과 따로, 자기 실행 파일을 가진 `autobattler/` 폴더에 둔다. 엔진(`nv`)만 링크하고 `sandbox/`의 코드는 쓰지 않는다.
+처음에는 엔진 저장소의 `autobattler/` 폴더였고, 2026-10-29에 자기 저장소(`chromedays/autobattler`)로 옮겼다. 엔진은 Git submodule `engine/`이고 `add_subdirectory(engine)`으로 더한다. 엔진(`nv`)만 링크하고 엔진 저장소의 샌드박스(`sandbox/`) 코드는 쓰지 않는다.
 
 | 파일 | 내용 |
 |---|---|
-| `autobattler/CMakeLists.txt` | 실행 파일 `autobattler`. 설치 구성 요소 `autobattler`의 `<prefix>/`에 설치한다("페이지" 참고) |
-| `autobattler/main.c` | 창, GPU, 렌더러, ImGui, 프로젝트 파일 읽기, 배치(레이아웃), 프레임 루프(고정 틱 누산기), 디버그 내보내기 |
-| `autobattler/game.h` | 실행 파일의 상태(`Game`: 창, GPU, 렌더러, 전투, 뷰가 가진 노드와 메시)와 파일 사이의 선언 |
-| `autobattler/battle.h`, `autobattler/battle.c` | 규칙과 틱. GPU와 ImGui를 포함하지 않으므로 ctest가 빌드할 수 있다 |
-| `autobattler/defs.c` | 프로젝트 파일 읽기(`abproj.md`). GPU와 ImGui를 쓰지 않으므로 ctest가 빌드할 수 있다 |
-| `autobattler/data/default.abproj` | 규칙, 유닛 정의, 스테이지(적 배치; B에서 지형지물) |
-| `autobattler/battle_view.c` | 메시, 이펙트, 카메라, 노드와 디버그 라인으로 그리기, 배치 입력, 패널, 빌드 라벨 |
-| `autobattler/strings.c` | 게임의 한국어 표("UI 문자열" 참고) |
-| 공간 격자, 흐름장 (B) | 열린 질문 2: `engine/`(`engine/spatial.h`, `engine/flow.h`) 또는 `autobattler/` |
+| `CMakeLists.txt` | 실행 파일 `autobattler`. 설치 구성 요소 `autobattler`의 `<prefix>/`에 설치한다("페이지" 참고) |
+| `src/main.c` | 창, GPU, 렌더러, ImGui, 프로젝트 파일 읽기, 배치(레이아웃), 프레임 루프(고정 틱 누산기), 디버그 내보내기 |
+| `src/game.h` | 실행 파일의 상태(`Game`: 창, GPU, 렌더러, 전투, 뷰가 가진 노드와 메시)와 파일 사이의 선언 |
+| `src/battle.h`, `src/battle.c` | 규칙과 틱. GPU와 ImGui를 포함하지 않으므로 ctest가 빌드할 수 있다 |
+| `src/defs.c` | 프로젝트 파일 읽기(`abproj.md`). GPU와 ImGui를 쓰지 않으므로 ctest가 빌드할 수 있다 |
+| `data/default.abproj` | 규칙, 유닛 정의, 스테이지(적 배치; B에서 지형지물) |
+| `src/battle_view.c` | 메시, 이펙트, 카메라, 노드와 디버그 라인으로 그리기, 배치 입력, 패널, 빌드 라벨 |
+| `src/strings.c` | 게임의 한국어 표("UI 문자열" 참고) |
+| 공간 격자, 흐름장 (B) | 열린 질문 2: 엔진(`engine/engine/spatial.h`, `engine/engine/flow.h`) 또는 `src/` |
 
 ### 실행 파일
 
 - **페이지:** 기본 브랜치와 열린 PR이 있는 브랜치의 Release와 Debug가 빌드 대시보드에 올라간다(`docs/specs/build_dashboard.md`;
   처음에는 Pages의 `autobattler/release/`, `autobattler/debug/`, `autobattler/<branch>/`였고 2026-10-29에 옮겼다). 샌드박스와
   따로 내려받는다.
-  - 루트 `CMakeLists.txt`에 `add_subdirectory(autobattler)`.
+  - 루트 `CMakeLists.txt`가 `add_subdirectory(engine)` 뒤에 실행 파일을 만든다.
   - `nv_setup_executable`에 `PRELOAD <폴더>@<패키지 안 경로> ...` 인수를 더한다(`ASSETS <폴더>`는 `<폴더>@/assets`와 같다).
-    게임은 정의 파일 폴더 `autobattler/data`를 `/data`에, 글꼴 폴더 `assets/fonts`만 `/assets/fonts`에 넣는다.
+    게임은 정의 파일 폴더 `data`를 `/data`에, 엔진의 글꼴 폴더 `engine/assets/fonts`만 `/assets/fonts`에 넣는다.
     `assets/` 전체는 넣지 않는다(쓰지 않는 캐릭터 모델이 빠진다).
   - `nv_setup_executable`에 `COMPONENT <name>` 인수를 더한다(기본값 `web`). `autobattler`는
     `nv_setup_executable(autobattler ROOT COMPONENT autobattler)`이므로 샌드박스의 `web` 패키지에 섞이지 않는다.
-  - `build.yml`의 Package가 `--component autobattler`를 `dist/engine-web/autobattler/release`와 `.../debug`에 설치하고,
-    stage가 기본 브랜치에서는 `autobattler/release`, `autobattler/debug`를, 다른 브랜치에서는 `autobattler/<branch>`를
-    바꾼다. `autobattler`라는 이름의 브랜치는 `release`, `debug`처럼 게시하지 않는다(그 폴더를 덮어쓰므로).
+  - `build.yml`의 Package가 `--component autobattler`를 `dist/autobattler-web/release`와 `.../debug`에 설치하고, publish 잡이
+    그것을 대시보드에 올린다.
 - **화면:** 전장이 뷰포트이고 ImGui 창 하나(Battle 패널)가 그 옆에 붙는다: 넓은 화면에서는 오른쪽(폭 300), 세로로 긴 화면에서는 아래
   (높이 42%). 뷰포트에서 시작한 입력은 ImGui를 건너뛰므로 둘은 겹치지 않는다. 에디터의 도크, 검색, 팔레트, 저장, undo, 선택, 콘솔
   탭은 없다. 씬 해상도는 뷰포트와 같게 시작하고, 터치 화면에서는 절반이다(샌드박스처럼). 구석의 빌드 라벨(빌드 종류, 커밋,
@@ -491,7 +490,7 @@ float는 같은 빌드 안에서 결정적이고 `sinf` 같은 libm 함수도 �
 ### UI 문자열 (엔진으로 옮김)
 
 결정(2026-10-02): `T()`, `TL()`과 언어 선택을 엔진(`engine/strings.h`)으로 옮기고, 한국어 표는 실행 파일마다 따로 둔다. 자세한
-내용은 `docs/specs/shared.md`의 "UI 문자열"이다. A부터 게임은 `autobattler/strings.c`에 자기 표를 두고, 브라우저 언어로
+내용은 `docs/specs/shared.md`의 "UI 문자열"이다. A부터 게임은 `src/strings.c`에 자기 표를 두고, 브라우저 언어로
 시작하며, Battle 패널의 Language 콤보로 바꾼다(저장 없음). 패널의 모든 글자는 `T()`/`TL()`을 거친다. B는 자기가 더하는 글자의
 행을 같은 표에 더한다.
 
@@ -512,8 +511,8 @@ float는 같은 빌드 안에서 결정적이고 `sinf` 같은 libm 함수도 �
 
 ### 테스트
 
-`tests/battle_test.c`(ctest, Node)가 `autobattler/battle.c`, `autobattler/defs.c`와 공간 격자(B에서 흐름장) 소스를 빌드한다.
-`-sNODERAWFS=1`로 링크해 저장소의 `autobattler/data/`를 바로 읽는다.
+`tests/battle_test.c`(ctest, Node)가 `src/battle.c`, `src/defs.c`와 공간 격자(B에서 흐름장) 소스를 빌드한다.
+`-sNODERAWFS=1`로 링크해 저장소의 `data/`를 바로 읽는다.
 
 A:
 - 프로젝트 파일(`abproj.md`의 "테스트" 절): 형식은 테스트 안의 텍스트로만 시험하고(오류마다 맞는 줄 번호, 규칙 키, 버전, 최상위 순서),
@@ -536,7 +535,7 @@ B:
 - 규칙 장면: 총탄이 길 위의 아군을 맞힌다; 범위 피해가 아군도 깎는다; 지면 폭발이 공중 유닛을 맞히지 않는다; Flak이 공중만
   노린다; 낮은 벽이 총탄을 막는다; Wasp가 지형지물 위를 난다; Ranger가 낮은 벽을 넘어 뛴다; 박격포의 최소 사거리.
 
-A부터 `tests/strings_test.mjs`가 `autobattler/`의 문자열도 검사한다(ctest 명령에 `autobattler` 폴더를 더한다).
+A부터 `engine/tests/strings_test.mjs`(엔진 submodule의 것)가 `src/`의 문자열을 검사한다(ctest 명령에 `../src`를 준다).
 
 Playwright(Release, Debug, 데스크톱과 폰 크기, A와 B 끝마다; 손으로 돌리는 검사이고 스크립트는 저장소에 없다): `autobattler/` 페이지를
 열고 다음을 본다. 정의 파일을 읽고 적이 놓였다; 패널이 데스크톱에서는 뷰포트 오른쪽에, 폰에서는 아래에 있다; 탭으로 분대를 놓고 (footprint의 아무 칸을 탭해) 지운다;
@@ -550,8 +549,8 @@ Playwright(Release, Debug, 데스크톱과 폰 크기, A와 B 끝마다; 손으�
 ### 단계
 
 0. **선행 (끝남):** `docs/specs/shared.md`(문자열, 메시, 해상도와 탭, 카메라, 글꼴, 버전, 도우미를 엔진으로).
-1. **A 시뮬레이션 (끝남):** 정의 파일(`autobattler/data/`)과 그 파서(`defs.c`), `battle.c`, `battle_test.c`의 A 항목. 화면 없음.
-2. **A 실행 파일 (끝남):** `autobattler/main.c`, 카메라, 그리기, 이펙트, Battle 패널과 그 한국어 표(`autobattler/strings.c`), 배치 입력, CMake와 CI 배포.
+1. **A 시뮬레이션 (끝남):** 정의 파일(`data/`)과 그 파서(`defs.c`), `battle.c`, `battle_test.c`의 A 항목. 화면 없음.
+2. **A 실행 파일 (끝남):** `src/main.c`, 카메라, 그리기, 이펙트, Battle 패널과 그 한국어 표(`src/strings.c`), 배치 입력, CMake와 CI 배포.
 3. **A 확인과 문서 (끝남):** Playwright 검사(디버그 내보내기는 2단계에서 이미 넣었다), `AGENTS.md`와 `autobattler.md` 갱신.
    여기서 한 번 멈추고 A를 직접 해 본다. B의 범위는 그 결과로 다시 본다.
    **프로젝트 파일 (끝남, 2026-10-05):** 두 정의 파일과 규칙 상수를 `default.abproj` 하나로(`docs/specs/abproj.md`).
@@ -563,14 +562,14 @@ Playwright(Release, Debug, 데스크톱과 폰 크기, A와 B 끝마다; 손으�
 
 1. ~~**정의 데이터 형식**~~: 해결됨(2026-10-03). 직접 만든 줄 단위 텍스트 파일을 패키지에 넣는다("정의 파일" 절).
 2. **공간 격자와 흐름장의 위치 (B):** `autobattler.md`대로 엔진(`engine/spatial.h`, `engine/flow.h`)인가, 아니면
-   `autobattler/`에서 먼저 쓰고 두 번째 쓰임이 생길 때 옮길까?
+   이 저장소(`src/`)에서 먼저 쓰고 두 번째 쓰임이 생길 때 옮길까?
 3. ~~**시간 제한 판정**~~: 해결됨(2026-10-03). 60초가 되면 남은 가치(`비용 × 체력 / 최대 체력`의 합)로 정한다.
 4. **분대:** 시작 뒤 유닛이 각자 행동하는 것(제안)이 맞는가, 대형을 유지해야 하는가? 지금은 제안대로 각자 행동한다(2026-10-11 구현).
 5. **대형 유닛의 통로 (B):** 흐름장은 칸 하나 너비를 기준으로 하므로 Fortress가 1칸 틈에 낄 수 있다. B는 스테이지에
    1칸 틈을 두지 않고, 크기별 흐름장은 나중으로 미룬다. 괜찮은가?
 6. ~~**수치**~~: 해결됨(2026-10-03). 표와 정의 파일의 값은 출발점으로 두고, A를 해 본 뒤 `default.abproj`에서 조정한다.
 7. ~~**UI 문자열**~~: 해결됨. 엔진으로 옮긴다("UI 문자열" 절).
-8. ~~**에셋**~~: 해결됨(2026-10-03). 게임 패키지에는 `PRELOAD`로 `assets/fonts/`와 `autobattler/data`만 넣는다. 캐릭터 모델
+8. ~~**에셋**~~: 해결됨(2026-10-03). 게임 패키지에는 `PRELOAD`로 `assets/fonts/`와 `data`만 넣는다. 캐릭터 모델
    (`assets/quaternius/`, gzip 약 0.6 MB)은 쓰지 않으므로 빠진다("실행 파일" 절).
 
 ## English
@@ -703,8 +702,8 @@ start. Changing a value needs repackaging (`cmake --build`), but no C code recom
 
 Changed (2026-10-05): the two files (`units.txt`, `stage.txt`) and the rule constants that were in code (cell size, grid, zones,
 round length, gravity, the retarget interval, the stop fraction, the minimum damage fraction) merged into **one project file**,
-`autobattler/data/default.abproj`. The syntax, the key tables of `rules`, `unit` and `stage`, the versions, reading and errors, and
-the tests are in `docs/specs/abproj.md`. The function that reads it is `defs_read_project` (`autobattler/defs.c`). The keys B adds
+`data/default.abproj`. The syntax, the key tables of `rules`, `unit` and `stage`, the versions, reading and errors, and
+the tests are in `docs/specs/abproj.md`. The function that reads it is `defs_read_project` (`src/defs.c`). The keys B adds
 (`layer`, `size`, `altitude`, several `weapon`s, `ability jump`, `prop` and so on) are listed there too, under "Later". A squad's
 `squad` and `footprint` came with the format (2026-10-11), still version 1.
 
@@ -1012,35 +1011,35 @@ module, so no fixed-point math is needed. Finished battles are compared by a has
 
 ### Where the code goes
 
-In a folder of its own, `autobattler/`, with its own executable, apart from the sandbox (`sandbox/`). It links only the engine
-(`nv`) and uses no code from `sandbox/`.
+At first the engine repository's `autobattler/` folder; moved to a repository of its own (`chromedays/autobattler`) on 2026-10-29.
+The engine is the Git submodule `engine/`, added with `add_subdirectory(engine)`. It links only the engine
+(`nv`) and uses no code from the engine repository's sandbox (`sandbox/`).
 
 | File | Contents |
 |---|---|
-| `autobattler/CMakeLists.txt` | The `autobattler` executable, installed into `<prefix>/` of the `autobattler` install component (see "Page") |
-| `autobattler/main.c` | Window, GPU, renderer, ImGui, reading the definition files, the layout, the frame loop (a fixed-tick accumulator), debug exports |
-| `autobattler/game.h` | The executable's state (`Game`: window, GPU, renderer, the battle, the nodes and meshes the view keeps) and the declarations between files |
-| `autobattler/battle.h`, `autobattler/battle.c` | The rules and the tick. No GPU or ImGui, so ctest can build it |
-| `autobattler/defs.c` | Reading the definition files (see "Definition files"). No GPU or ImGui, so ctest can build it |
-| `autobattler/data/default.abproj` | The rules, the unit definitions and the stage (the enemy deployment; props in B) |
-| `autobattler/battle_view.c` | Meshes, effects, the camera, drawing with nodes and debug lines, deployment input, the panel, the build label |
-| `autobattler/strings.c` | The game's Korean table (see "UI strings") |
-| Spatial grid, flow field (B) | Open question 2: `engine/` (`engine/spatial.h`, `engine/flow.h`) or `autobattler/` |
+| `CMakeLists.txt` | The `autobattler` executable, installed into `<prefix>/` of the `autobattler` install component (see "Page") |
+| `src/main.c` | Window, GPU, renderer, ImGui, reading the definition files, the layout, the frame loop (a fixed-tick accumulator), debug exports |
+| `src/game.h` | The executable's state (`Game`: window, GPU, renderer, the battle, the nodes and meshes the view keeps) and the declarations between files |
+| `src/battle.h`, `src/battle.c` | The rules and the tick. No GPU or ImGui, so ctest can build it |
+| `src/defs.c` | Reading the definition files (see "Definition files"). No GPU or ImGui, so ctest can build it |
+| `data/default.abproj` | The rules, the unit definitions and the stage (the enemy deployment; props in B) |
+| `src/battle_view.c` | Meshes, effects, the camera, drawing with nodes and debug lines, deployment input, the panel, the build label |
+| `src/strings.c` | The game's Korean table (see "UI strings") |
+| Spatial grid, flow field (B) | Open question 2: the engine (`engine/engine/spatial.h`, `engine/engine/flow.h`) or `src/` |
 
 ### Executable
 
 - **Page:** the Release and Debug builds of the default branch and of every branch with an open pull request are on the build
   dashboard (`docs/specs/build_dashboard.md`; at first on Pages at `autobattler/release/`, `autobattler/debug/` and
   `autobattler/<branch>/`, moved 2026-10-29). Downloaded apart from the sandbox.
-  - The root `CMakeLists.txt` gets `add_subdirectory(autobattler)`.
+  - The root `CMakeLists.txt` makes the executable after `add_subdirectory(engine)`.
   - `nv_setup_executable` gets a `PRELOAD <dir>@<path in the package> ...` argument (`ASSETS <dir>` is `<dir>@/assets`). The game
-    puts the definition folder `autobattler/data` at `/data` and only the font folder `assets/fonts` at `/assets/fonts`, not all of
+    puts the definition folder `data` at `/data` and only the engine's font folder `engine/assets/fonts` at `/assets/fonts`, not all of
     `assets/` (the unused character models stay out).
   - `nv_setup_executable` gets a `COMPONENT <name>` argument (default `web`). The game is
     `nv_setup_executable(autobattler ROOT COMPONENT autobattler)`, so it stays out of the sandbox's `web` package.
-  - In `build.yml`, Package installs `--component autobattler` into `dist/engine-web/autobattler/release` and `.../debug`,
-    and stage replaces `autobattler/release` and `autobattler/debug` for the default branch, `autobattler/<branch>` for others.
-    A branch named `autobattler` is not published, like `release` and `debug` (it would replace that folder).
+  - In `build.yml`, Package installs `--component autobattler` into `dist/autobattler-web/release` and `.../debug`, and the publish
+    jobs put them on the dashboard.
 - **Screen:** the battlefield is the viewport, with one ImGui window (the Battle panel) beside it: on its right (300 wide) on a wide
   screen, under it (42% high) on a tall one. They do not overlap, since input that starts in the viewport skips ImGui. None of the
   editor's docks, search, palette, saving, undo, selection or Console tab. The scene resolution starts equal to the viewport, and
@@ -1104,7 +1103,7 @@ In a folder of its own, `autobattler/`, with its own executable, apart from the 
 
 Decided (2026-10-02): `T()`, `TL()` and language selection move to the engine (`engine/strings.h`), and each executable keeps its
 own Korean table. The details are in "UI strings" of `docs/specs/shared.md`. From A on the game keeps its table in
-`autobattler/strings.c`, starts in the browser's language and switches with a Language combo in the Battle panel (not saved).
+`src/strings.c`, starts in the browser's language and switches with a Language combo in the Battle panel (not saved).
 Every text in the panel goes through `T()`/`TL()`. B adds rows for the text it adds to the same table.
 
 ### Third-party candidates
@@ -1124,8 +1123,8 @@ Every text in the panel goes through `T()`/`TL()`. B adds rows for the text it a
 
 ### Tests
 
-`tests/battle_test.c` (ctest, Node) builds `autobattler/battle.c`, `autobattler/defs.c` and the spatial grid (and in B the flow
-field) sources. It links with `-sNODERAWFS=1` to read the repository's `autobattler/data/` directly.
+`tests/battle_test.c` (ctest, Node) builds `src/battle.c`, `src/defs.c` and the spatial grid (and in B the flow
+field) sources. It links with `-sNODERAWFS=1` to read the repository's `data/` directly.
 
 A:
 - The project file ("Tests" in `abproj.md`): the format is tried only with text inside the test (each error with the right line
@@ -1151,7 +1150,7 @@ B:
 - Rule scenes: a bullet hits an ally on its path; area damage hurts allies too; a ground explosion does not hit air units; Flak
   aims at air only; a low wall stops bullets; a Wasp flies over props; a Ranger jumps a low wall; the mortar's minimum range.
 
-From A on, `tests/strings_test.mjs` checks `autobattler/`'s strings too (the ctest command gets the `autobattler` folder).
+From A on, `engine/tests/strings_test.mjs` (the engine submodule's) checks `src/`'s strings (the ctest command gives it `../src`).
 
 Playwright (Release and Debug, desktop and phone sizes, at the end of A and of B; run by hand, the script is not in the repository): open the
 `autobattler/` page and check: the definition files are read and the enemy is placed; the panel is right of the viewport on desktop and
@@ -1170,9 +1169,9 @@ to count as a tap, so the checks wait about two seconds.
 
 0. **First (done):** `docs/specs/shared.md` (strings, meshes, resolution and taps, the camera, the font, the version and helpers
    move to the engine).
-1. **A, simulation (done):** the definition files (`autobattler/data/`) and their parser (`defs.c`), `battle.c`, A's items in
+1. **A, simulation (done):** the definition files (`data/`) and their parser (`defs.c`), `battle.c`, A's items in
    `battle_test.c`. No view.
-2. **A, executable (done):** `autobattler/main.c`, the camera, drawing, effects, the Battle panel and its Korean table (`autobattler/strings.c`),
+2. **A, executable (done):** `src/main.c`, the camera, drawing, effects, the Battle panel and its Korean table (`src/strings.c`),
    deployment input, CMake and the CI deployment.
 3. **A, checks and docs (done):** Playwright checks (the debug exports were already added in phase 2), updates to `AGENTS.md` and
    `autobattler.md`. Stop here and play A. B's scope is looked at again with what that shows.
@@ -1186,7 +1185,7 @@ to count as a tap, so the checks wait about two seconds.
 
 1. ~~**Definition data format**~~: resolved (2026-10-03). Our own line-based text files, packaged ("Definition files" section).
 2. **Where the spatial grid and flow field go (B):** the engine (`engine/spatial.h`, `engine/flow.h`), as `autobattler.md`
-   says, or `autobattler/` first, moving them when a second use appears?
+   says, or this repository (`src/`) first, moving them when a second use appears?
 3. ~~**Time-limit judgment**~~: resolved (2026-10-03). At 60 seconds, remaining value (the sum of `cost × health / max health`) decides.
 4. **Squads:** units act on their own after the start (proposed), or keep a formation? For now they act on their own, as proposed
    (built 2026-10-11).
@@ -1195,5 +1194,5 @@ to count as a tap, so the checks wait about two seconds.
 6. ~~**Numbers**~~: resolved (2026-10-03). The values in the tables and definition files are a starting point, adjusted in
    `default.abproj` after playing A.
 7. ~~**UI strings**~~: resolved. They move to the engine ("UI strings" section).
-8. ~~**Assets**~~: resolved (2026-10-03). The game's package holds only `assets/fonts/` and `autobattler/data`, through
+8. ~~**Assets**~~: resolved (2026-10-03). The game's package holds only `assets/fonts/` and `data`, through
    `PRELOAD`. The character models (`assets/quaternius/`, about 0.6 MB gzip) are unused and left out ("Executable" section).
