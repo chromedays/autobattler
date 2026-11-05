@@ -4,3 +4,4 @@ compile_commands.json
 dist/
 .shader-tools/
 build-*/
+.superext
