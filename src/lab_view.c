@@ -1,4 +1,4 @@
-// The unit lab's view (docs/specs/unit_lab.md): its camera, meshes, rings and paths, and the panel's lab sections. The lab's
+// The unit lab's view (docs/specs/unit_lab.md): its camera, meshes, rings, paths and dimensions, and the panel's lab sections. The lab's
 // battle is drawn by battle_view.c's view_update like the round's; the rules are lab.c, changed here only through
 // game_lab_settings_changed, game_lab_choose_unit, game_set_unit_value, lab_start and lab_reset_results.
 
@@ -93,8 +93,6 @@ internal void set_target_mesh(Game* game, NvMeshId* slot, const UnitDef* def)
 void lab_view_draw(Game* game)
 {
     const Lab* lab = &game->lab;
-    const LabSettings* settings = &lab->settings;
-    NvRenderer* renderer = &game->renderer;
     // The meshes follow the lab's defs: remade in their slots when a size changed.
     for (u32 i = 0; i < LAB_DEF_COUNT; ++i) {
         const UnitDef* def = &lab->defs.units[i];
@@ -106,27 +104,6 @@ void lab_view_draw(Game* game)
             set_target_mesh(game, &game->lab_meshes[i], def);
         game->lab_mesh_sizes[i][0] = def->radius;
         game->lab_mesh_sizes[i][1] = def->height;
-    }
-
-    // The unit's range on the ground, and where it stops when it walks.
-    const Unit* unit = &lab->battle.units[LAB_SLOT_UNIT];
-    const WeaponDef* weapon = &lab->defs.units[LAB_DEF_UNIT].weapon;
-    NvVec3 ground = nv_vec3(unit->position.x, 0.05f, unit->position.z);
-    view_draw_ring(renderer, ground, nv_vec3(1, 0, 0), nv_vec3(0, 0, 1), weapon->range, nv_vec3(0.9f, 0.75f, 0.3f));
-    if (settings->walk)
-        view_draw_ring(renderer, ground, nv_vec3(1, 0, 0), nv_vec3(0, 0, 1), weapon->range * lab->defs.rules.stop_fraction,
-                       nv_vec3(0.35f, 0.3f, 0.15f));
-
-    // The way moving targets go back and forth, at their height.
-    if (settings->targets_move && settings->move_width > 0.0f) {
-        f32 field_width = (f32)lab->defs.rules.grid_width * lab->defs.rules.cell_size;
-        for (u32 i = 0; i < LAB_TARGET_COUNT; ++i) {
-            NvVec3 home = lab->homes[i];
-            f32 y = (i == LAB_AIR ? home.y : 0.0f) + 0.05f;
-            f32 from = fmaxf(home.x - settings->move_width * 0.5f, settings->target_radius);
-            f32 to = fminf(home.x + settings->move_width * 0.5f, field_width - settings->target_radius);
-            nv_renderer_debug_line(renderer, nv_vec3(from, y, home.z), nv_vec3(to, y, home.z), nv_vec3(0.4f, 0.4f, 0.45f));
-        }
     }
 }
 
@@ -153,62 +130,143 @@ internal ScreenPoint screen_point(Game* game, NvVec3 point)
     return (ScreenPoint){.ok = true, .point = {x / ratio, y / ratio}};
 }
 
-#define DIMENSION_COLOR     0xFFC8C8D2u
-#define DIMENSION_THICKNESS 1.5f
-#define DIMENSION_CAP       6.0f // pixels to each side of the line at its ends
-#define DIMENSION_GAP_PAD   4.0f // pixels between the text and the line on either side of it
+// Colors (ImGui's ABGR) of the dimensions, each the color of what it measures.
+#define DIMENSION_RANGE_COLOR    0xFF4DBFE6u // the range ring's
+#define DIMENSION_STOP_COLOR     0xFF59A6BFu
+#define DIMENSION_DISTANCE_COLOR 0xFFE6E6EEu
+#define DIMENSION_SIZE_COLOR     0xFFFFD999u
+#define DIMENSION_THICKNESS      1.5f
+#define DIMENSION_CAP            6.0f  // pixels to each side of the line at its ends
+#define DIMENSION_GAP_PAD        4.0f  // pixels between the text and the line on either side of it
+#define DIMENSION_MIN_SIZE       20.0f // pixels a body's height or width must take on screen to be drawn
+#define DIMENSION_BODY_GAP       0.3f  // meters between a body and its height's line
 
-// A dimension line from the ground up to an air unit, as a drawing has one: a cap across each end and its height written
-// in a gap in the middle, |-----10.0 m-----|. When the line is too short on screen for the text, the text goes beside it.
-internal void draw_height_dimension(Game* game, ImDrawList* draw, NvVec3 top)
+// A dimension line between two world points, as a drawing has one: a cap across each end and `text` in a gap in the middle,
+// |-----20.0 m-----|. When the line is too short on screen for the text, the text goes beside it, on its `side` (+1 or -1:
+// the screen's (-y, x) of the line from `from` to `to`, or the other). A line shorter than `min_length` pixels on screen is not
+// drawn at all.
+internal void draw_dimension(Game* game, ImDrawList* draw, NvVec3 from, NvVec3 to, const char* text, u32 color, f32 min_length, f32 side)
 {
-    ScreenPoint low = screen_point(game, nv_vec3(top.x, 0.0f, top.z)), high = screen_point(game, top);
+    ScreenPoint low = screen_point(game, from), high = screen_point(game, to);
     if (!low.ok || !high.ok)
         return;
     ImVec2_c a = low.point, b = high.point;
     f32 dx = b.x - a.x, dy = b.y - a.y, length = sqrtf(dx * dx + dy * dy);
-    if (length < 1.0f)
+    if (length < fmaxf(1.0f, min_length))
         return;
     ImVec2_c along = {dx / length, dy / length}, across = {-along.y, along.x};
     for (u32 end = 0; end < 2; ++end) {
         ImVec2_c p = end ? b : a;
         ImDrawList_AddLine(draw, (ImVec2_c){p.x - across.x * DIMENSION_CAP, p.y - across.y * DIMENSION_CAP},
-                           (ImVec2_c){p.x + across.x * DIMENSION_CAP, p.y + across.y * DIMENSION_CAP}, DIMENSION_COLOR, DIMENSION_THICKNESS);
+                           (ImVec2_c){p.x + across.x * DIMENSION_CAP, p.y + across.y * DIMENSION_CAP}, color, DIMENSION_THICKNESS);
     }
-
-    char text[32];
-    snprintf(text, sizeof(text), T("%.1f m"), top.y);
     ImVec2_c size = igCalcTextSize(text, NULL, false, -1.0f);
     ImVec2_c middle = {(a.x + b.x) * 0.5f, (a.y + b.y) * 0.5f};
     // How far the text's box reaches along the line from its middle.
     f32 half_gap = (fabsf(along.x) * size.x + fabsf(along.y) * size.y) * 0.5f + DIMENSION_GAP_PAD;
     ImVec2_c text_pos;
     if (length > 2.0f * half_gap + 2.0f * DIMENSION_CAP) {
-        ImDrawList_AddLine(draw, a, (ImVec2_c){middle.x - along.x * half_gap, middle.y - along.y * half_gap}, DIMENSION_COLOR,
-                           DIMENSION_THICKNESS);
-        ImDrawList_AddLine(draw, (ImVec2_c){middle.x + along.x * half_gap, middle.y + along.y * half_gap}, b, DIMENSION_COLOR,
-                           DIMENSION_THICKNESS);
+        ImDrawList_AddLine(draw, a, (ImVec2_c){middle.x - along.x * half_gap, middle.y - along.y * half_gap}, color, DIMENSION_THICKNESS);
+        ImDrawList_AddLine(draw, (ImVec2_c){middle.x + along.x * half_gap, middle.y + along.y * half_gap}, b, color, DIMENSION_THICKNESS);
         text_pos = (ImVec2_c){middle.x - size.x * 0.5f, middle.y - size.y * 0.5f};
     } else {
-        ImDrawList_AddLine(draw, a, b, DIMENSION_COLOR, DIMENSION_THICKNESS);
-        text_pos = (ImVec2_c){middle.x + DIMENSION_CAP + DIMENSION_GAP_PAD, middle.y - size.y * 0.5f};
+        ImDrawList_AddLine(draw, a, b, color, DIMENSION_THICKNESS);
+        // Beside the line: off its middle across it, by half the text's box that way.
+        f32 reach = ((fabsf(across.x) * size.x + fabsf(across.y) * size.y) * 0.5f + DIMENSION_CAP + DIMENSION_GAP_PAD) * side;
+        text_pos = (ImVec2_c){middle.x + across.x * reach - size.x * 0.5f, middle.y + across.y * reach - size.y * 0.5f};
     }
     ImDrawList_AddRectFilled(draw, (ImVec2_c){text_pos.x - 3.0f, text_pos.y - 1.0f},
                              (ImVec2_c){text_pos.x + size.x + 3.0f, text_pos.y + size.y + 1.0f}, 0x99000000u, 3.0f, 0);
-    ImDrawList_AddText_Vec2(draw, text_pos, 0xFFE6E6EEu, text, NULL);
+    ImDrawList_AddText_Vec2(draw, text_pos, color, text, NULL);
 }
 
-// The height of each air unit of the lab (the air target, and the unit when it flies) as a dimension line. Drawn after the
-// camera is placed for the frame (view_update), behind the panel.
-void lab_view_labels(Game* game)
+// A body's height beside it (on the screen's right of it) and its width across its top (its base is where an air unit's
+// altitude ends), when they are large enough on screen to read. When their text goes beside them, the height's goes right and
+// the width's up, away from each other and from the body.
+internal void draw_body_dimensions(Game* game, ImDrawList* draw, NvVec3 base, const UnitDef* def, NvVec3 right)
 {
-    const Battle* battle = &game->lab.battle;
+    char text[48];
+    NvVec3 side = nv_vec3_add(base, nv_vec3_scale(right, def->radius + DIMENSION_BODY_GAP));
+    snprintf(text, sizeof(text), T("Height %.2f m"), def->height);
+    draw_dimension(game, draw, side, nv_vec3_add(side, nv_vec3(0.0f, def->height, 0.0f)), text, DIMENSION_SIZE_COLOR, DIMENSION_MIN_SIZE,
+                   1.0f);
+    NvVec3 top = nv_vec3(base.x, base.y + def->height, base.z);
+    snprintf(text, sizeof(text), T("Width %.2f m"), def->radius * 2.0f);
+    draw_dimension(game, draw, nv_vec3_sub(top, nv_vec3_scale(right, def->radius)), nv_vec3_add(top, nv_vec3_scale(right, def->radius)),
+                   text, DIMENSION_SIZE_COLOR, DIMENSION_MIN_SIZE, -1.0f);
+}
+
+// Every frame in the lab, after the camera is placed for the frame (view_update), from where the units are drawn (between
+// ticks): the range rings and the targets' ways as debug lines, and the dimensions (the range, the stop distance, the
+// distance to the target, air units' heights, the bodies' sizes) on ImGui's background list, behind the panel.
+void lab_view_overlay(Game* game)
+{
+    const Lab* lab = &game->lab;
+    const Battle* battle = &lab->battle;
+    const LabSettings* settings = &lab->settings;
+    NvRenderer* renderer = &game->renderer;
+    if (game->unit_nodes_made < LAB_SLOT_AIR)
+        return; // the view has not drawn the lab's units yet
+    NvVec3 drawn[LAB_SLOT_AIR + 1];
+    for (u32 slot = LAB_SLOT_UNIT; slot <= LAB_SLOT_AIR; ++slot)
+        drawn[slot] = nv_scene_get(game->scene, game->unit_nodes[slot])->position;
+
+    // The unit's range on the ground, and where it stops when it walks.
+    const WeaponDef* weapon = &lab->defs.units[LAB_DEF_UNIT].weapon;
+    f32 stop = weapon->range * lab->defs.rules.stop_fraction;
+    NvVec3 ground = nv_vec3(drawn[LAB_SLOT_UNIT].x, 0.05f, drawn[LAB_SLOT_UNIT].z);
+    view_draw_ring(renderer, ground, nv_vec3(1, 0, 0), nv_vec3(0, 0, 1), weapon->range, nv_vec3(0.9f, 0.75f, 0.3f));
+    if (settings->walk)
+        view_draw_ring(renderer, ground, nv_vec3(1, 0, 0), nv_vec3(0, 0, 1), stop, nv_vec3(0.35f, 0.3f, 0.15f));
+    // The way moving targets go back and forth, at their height.
+    if (settings->targets_move && settings->move_width > 0.0f) {
+        f32 field_width = (f32)lab->defs.rules.grid_width * lab->defs.rules.cell_size;
+        for (u32 i = 0; i < LAB_TARGET_COUNT; ++i) {
+            NvVec3 home = lab->homes[i];
+            f32 y = (i == LAB_AIR ? home.y : 0.0f) + 0.05f;
+            f32 from = fmaxf(home.x - settings->move_width * 0.5f, settings->target_radius);
+            f32 to = fminf(home.x + settings->move_width * 0.5f, field_width - settings->target_radius);
+            nv_renderer_debug_line(renderer, nv_vec3(from, y, home.z), nv_vec3(to, y, home.z), nv_vec3(0.4f, 0.4f, 0.45f));
+        }
+    }
+    if (game->lab_hide_dimensions)
+        return;
+
     ImDrawList* draw = igGetBackgroundDrawList(NULL);
-    for (u32 slot = 1; slot <= battle->unit_count && slot <= game->unit_nodes_made; ++slot) {
-        const Unit* unit = &battle->units[slot];
-        if ((unit->flags & UNIT_DEAD) || battle->defs->units[unit->def].layer != UNIT_LAYER_AIR)
+    char text[48];
+    // The range and the stop distance across the unit's facing, to its two sides, so they stay off the way it fires.
+    const Unit* unit = &battle->units[LAB_SLOT_UNIT];
+    NvVec3 across = nv_vec3(cosf(unit->yaw), 0.0f, -sinf(unit->yaw)); // the unit's left: facing (sin yaw, 0, cos yaw) turned
+    snprintf(text, sizeof(text), T("Range %.1f m"), weapon->range);
+    draw_dimension(game, draw, ground, nv_vec3_add(ground, nv_vec3_scale(across, weapon->range)), text, DIMENSION_RANGE_COLOR, 0.0f, 1.0f);
+    if (settings->walk) {
+        snprintf(text, sizeof(text), T("Stop %.1f m"), stop);
+        draw_dimension(game, draw, ground, nv_vec3_sub(ground, nv_vec3_scale(across, stop)), text, DIMENSION_STOP_COLOR, 0.0f, 1.0f);
+    }
+    // The distance to the unit's target, on the ground (as the rules measure it).
+    if (unit->target.index) {
+        NvVec3 target = drawn[unit->target.index];
+        NvVec3 there = nv_vec3(target.x, 0.05f, target.z);
+        f32 dx = there.x - ground.x, dz = there.z - ground.z;
+        snprintf(text, sizeof(text), T("Distance %.1f m"), sqrtf(dx * dx + dz * dz));
+        draw_dimension(game, draw, ground, there, text, DIMENSION_DISTANCE_COLOR, 0.0f, 1.0f);
+    }
+    // Air units' heights over the ground, and every body's size.
+    NvNode* camera = nv_scene_get(game->scene, game->camera);
+    NvVec3 right = nv_quat_rotate(camera->rotation, nv_vec3(1.0f, 0.0f, 0.0f));
+    right.y = 0.0f;
+    right = nv_vec3_dot(right, right) > 1e-8f ? nv_vec3_normalize(right) : nv_vec3(1.0f, 0.0f, 0.0f);
+    for (u32 slot = LAB_SLOT_UNIT; slot <= LAB_SLOT_AIR; ++slot) {
+        const Unit* body = &battle->units[slot];
+        if (body->flags & UNIT_DEAD)
             continue;
-        draw_height_dimension(game, draw, nv_scene_get(game->scene, game->unit_nodes[slot])->position); // as drawn, between ticks
+        const UnitDef* def = &battle->defs->units[body->def];
+        NvVec3 base = drawn[slot];
+        if (def->layer == UNIT_LAYER_AIR) {
+            snprintf(text, sizeof(text), T("Altitude %.1f m"), base.y);
+            draw_dimension(game, draw, nv_vec3(base.x, 0.0f, base.z), base, text, DIMENSION_DISTANCE_COLOR, 0.0f, 1.0f);
+        }
+        draw_body_dimensions(game, draw, base, def, right);
     }
 }
 
@@ -249,6 +307,10 @@ internal void conditions_section(Game* game)
     changed |= lab_number(TL("Air altitude (m)"), &settings->air_altitude, 0.1f, 1.0f, 50.0f, "%.1f");
     changed |= lab_number(TL("Respawn delay (s)"), &settings->respawn_delay, 0.01f, 0.0f, 10.0f, "%.2f");
     igPopItemWidth();
+    // What the view draws, not a change of the run.
+    b32 dimensions = !game->lab_hide_dimensions;
+    if (lab_checkbox(TL("Dimensions"), &dimensions))
+        game->lab_hide_dimensions = !dimensions;
     if (changed)
         game_lab_settings_changed(game);
 }
