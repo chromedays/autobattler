@@ -180,8 +180,10 @@ Reset results 버튼은 측정값만 지운다(실험은 그대로 이어진다)
 - 실험실의 메시는 실험실 정의(유닛, 지상 표적, 공중 표적)마다 하나씩, 자기 슬롯에서 만든다(전투의 유닛 메시와 따로).
 
 **치수선.** 길이는 도면의 치수선으로 보인다: 두 끝에 가로 눈금, 가운데 틈에 이름과 값(`|-----Range 20.0 m-----|`, 어두운 바탕, 재는 것의
-색). 화면에서 선이 글자보다 짧으면 글자는 선 옆으로 간다(정해진 쪽). Lab 절의 **Dimensions** 체크(기본 켬, 저장하지 않음, 실험의 바꾸기가
-아니다)로 모두 감춘다.
+색). 화면에서 선이 글자보다 짧으면 글자는 선 옆으로 간다(정해진 쪽).
+
+**View 절.** 그리는 것마다 체크 하나(두 줄에 셋씩, 기본은 모두 켬, 저장하지 않음, 실험의 바꾸기가 아니다; `Game.lab_hidden`, `LAB_SHOW_*`):
+Range(사거리 원과 그 치수), Stop distance(정지 거리 원과 그 치수), Distance to target, Altitude, Body sizes, Target paths(움직이는 표적의 길).
 
 | 치수 | 어디 | 색 |
 |---|---|---|
@@ -199,7 +201,7 @@ Reset results 버튼은 측정값만 지운다(실험은 그대로 이어진다)
 
 실험실 모드에서 위에서 아래로: 단계 대신 "Unit Lab", 언어 콤보, 모드 버튼, 프로젝트 줄(Open..., Reload, Save, Save as...), Rules
 절(전투와 같다), 유닛 고르기(유닛 종류 버튼과 레이어 줄; 역할 필터는 전투와 같이 쓴다), 분대 줄("A squad of 6: the lab tries one of
-them."), Restart 버튼과 Restart on change 체크, 시간 버튼, 실험 시간, Lab 절(실험 조건, 펼침), Unit 절(유닛 값 고치기, 접힘), Results 절
+them."), Restart 버튼과 Restart on change 체크, 시간 버튼, 실험 시간, Lab 절(실험 조건, 펼침), View 절(그리는 것의 체크, 펼침), Unit 절(유닛 값 고치기, 접힘), Results 절
 (측정값, 빗나감, 기대값, 바꾼 횟수, Reset results; 펼침), 짧은 도움말. 패널은 길어서 세로로 스크롤한다. 모든 글자는 `T()`/`TL()`을
 거치고 한국어 행을 `src/strings.c`에 더한다. Unit 절의 이름표는 키 표(`lab_view.c`의 `unit_value_keys`, `.label =`)에 있고 보일 때
 `T()`를 거친다.
@@ -225,11 +227,11 @@ Windows의 스크립트(`engine/debug_script.h`)가 받는 인수는 정수와 �
 
 - `_battle_debug_lab(n)`: 0 실험실 모드인가, 1 실험 틱, 2 발사, 3 명중, 4 빗나감, 5 지상 표적 처치, 6 공중 표적 처치, 7 피해 합(정수로 내림),
   8 상태 해시, 9 고른 유닛 정의, 10 유닛의 대상(0 없음, 1 지상, 2 공중), 11 기록된 바꾸기 수, 12 지난 Reset results 뒤에 바꾼 횟수, 13 기록이
-  찼는가.
+  찼는가, 14 View 절이 감춘 것(`LAB_SHOW_*`의 마스크).
 - `_battle_debug_lab_enter(on)`: 1이면 실험실로, 0이면 전투로. 못 하면(배치 단계가 아니거나 정의가 없으면) 0.
 - `_battle_debug_lab_set(setting, value)`: 실험 조건 하나를 패널처럼 바꾼다. `value`는 백분의 일(스위치는 0이나 100). `setting`: 0 유닛 정의,
   1 Walk into range, 2 Distance, 3 Targets move, 4 Move speed, 5 Move width, 6 Target health, 7 Target armor, 8 Target radius, 9 Target
-  height, 10 Air altitude, 11 Respawn delay, 12 Restart on change.
+  height, 10 Air altitude, 11 Respawn delay, 12 Restart on change, 13 View 절이 감출 것(`LAB_SHOW_*`의 마스크 × 100; 실험의 바꾸기가 아니다).
 - `_battle_debug_lab_action(action)`: 0 Restart, 1 Reset results.
 - `_battle_debug_lab_run(ticks)`: 실험을 그만큼 바로 돌린다(뷰의 이펙트와 함께).
 - `_battle_debug_set_unit_value(index, value)`: Unit 절처럼 유닛 값 하나를 고친다. `index`는 키 표의 순서(0 `cost`, 1 `squad`, 2

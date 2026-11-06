@@ -545,7 +545,8 @@ NV_DEBUG_EXPORT float battle_debug_project(float x, float y, float z, int axis)
 // The unit lab, for tests (docs/specs/unit_lab.md, "Debug exports"). Module._battle_debug_lab(n): 0 whether the lab is shown,
 // 1 its tick, 2 shots, 3 hits, 4 misses, 5 ground target kills, 6 air target kills, 7 the damage dealt (whole), 8 the state's
 // hash, 9 the lab's unit def, 10 the unit's target (0 none, 1 the ground target, 2 the air one), 11 the changes recorded,
-// 12 the changes since the results were reset, 13 whether too many changes went in to step back.
+// 12 the changes since the results were reset, 13 whether too many changes went in to step back, 14 what the View section
+// hides (a mask of LAB_SHOW_*).
 NV_DEBUG_EXPORT int battle_debug_lab(int which)
 {
     const Lab* lab = &game_state.lab;
@@ -567,6 +568,7 @@ NV_DEBUG_EXPORT int battle_debug_lab(int which)
     }
     case 11: return (int)lab->change_count;
     case 12: return (int)results->changes;
+    case 14: return (int)game_state.lab_hidden;
     default: return lab->changes_full;
     }
 }
@@ -579,7 +581,8 @@ NV_DEBUG_EXPORT int battle_debug_lab_enter(int on)
 
 // Changes one of the lab's settings as its panel does, `value` in hundredths (a switch is 0 or 100): 0 the unit def, 1 walk into
 // range, 2 distance, 3 targets move, 4 move speed, 5 move width, 6 target health, 7 target armor, 8 target radius, 9 target
-// height, 10 air altitude, 11 respawn delay, 12 restart on change. 0 for no such setting.
+// height, 10 air altitude, 11 respawn delay, 12 restart on change; and 13 what the View section hides (a mask of LAB_SHOW_*, times
+// 100), which is no change of the run. 0 for no such setting.
 NV_DEBUG_EXPORT int battle_debug_lab_set(int setting, int value)
 {
     Game* game = &game_state;
@@ -600,6 +603,7 @@ NV_DEBUG_EXPORT int battle_debug_lab_set(int setting, int value)
     case 10: settings->air_altitude = number; break;
     case 11: settings->respawn_delay = number; break;
     case 12: settings->restart_on_change = on; break;
+    case 13: game->lab_hidden = (u32)(value / 100); return 1;
     default: return 0;
     }
     game_lab_settings_changed(game);

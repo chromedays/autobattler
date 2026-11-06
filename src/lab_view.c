@@ -215,11 +215,14 @@ void lab_view_overlay(Game* game)
     const WeaponDef* weapon = &lab->defs.units[LAB_DEF_UNIT].weapon;
     f32 stop = weapon->range * lab->defs.rules.stop_fraction;
     NvVec3 ground = nv_vec3(drawn[LAB_SLOT_UNIT].x, 0.05f, drawn[LAB_SLOT_UNIT].z);
-    view_draw_ring(renderer, ground, nv_vec3(1, 0, 0), nv_vec3(0, 0, 1), weapon->range, nv_vec3(0.9f, 0.75f, 0.3f));
-    if (settings->walk)
+    u32 shown = ~game->lab_hidden;
+    b32 show_stop = settings->walk && (shown & LAB_SHOW_STOP);
+    if (shown & LAB_SHOW_RANGE)
+        view_draw_ring(renderer, ground, nv_vec3(1, 0, 0), nv_vec3(0, 0, 1), weapon->range, nv_vec3(0.9f, 0.75f, 0.3f));
+    if (show_stop)
         view_draw_ring(renderer, ground, nv_vec3(1, 0, 0), nv_vec3(0, 0, 1), stop, nv_vec3(0.35f, 0.3f, 0.15f));
     // The way moving targets go back and forth, at their height.
-    if (settings->targets_move && settings->move_width > 0.0f) {
+    if ((shown & LAB_SHOW_PATHS) && settings->targets_move && settings->move_width > 0.0f) {
         f32 field_width = (f32)lab->defs.rules.grid_width * lab->defs.rules.cell_size;
         for (u32 i = 0; i < LAB_TARGET_COUNT; ++i) {
             NvVec3 home = lab->homes[i];
@@ -229,22 +232,22 @@ void lab_view_overlay(Game* game)
             nv_renderer_debug_line(renderer, nv_vec3(from, y, home.z), nv_vec3(to, y, home.z), nv_vec3(0.4f, 0.4f, 0.45f));
         }
     }
-    if (game->lab_hide_dimensions)
-        return;
-
     ImDrawList* draw = igGetBackgroundDrawList(NULL);
     char text[48];
     // The range and the stop distance across the unit's facing, to its two sides, so they stay off the way it fires.
     const Unit* unit = &battle->units[LAB_SLOT_UNIT];
     NvVec3 across = nv_vec3(cosf(unit->yaw), 0.0f, -sinf(unit->yaw)); // the unit's left: facing (sin yaw, 0, cos yaw) turned
-    snprintf(text, sizeof(text), T("Range %.1f m"), weapon->range);
-    draw_dimension(game, draw, ground, nv_vec3_add(ground, nv_vec3_scale(across, weapon->range)), text, DIMENSION_RANGE_COLOR, 0.0f, 1.0f);
-    if (settings->walk) {
+    if (shown & LAB_SHOW_RANGE) {
+        snprintf(text, sizeof(text), T("Range %.1f m"), weapon->range);
+        draw_dimension(game, draw, ground, nv_vec3_add(ground, nv_vec3_scale(across, weapon->range)), text, DIMENSION_RANGE_COLOR, 0.0f,
+                       1.0f);
+    }
+    if (show_stop) {
         snprintf(text, sizeof(text), T("Stop %.1f m"), stop);
         draw_dimension(game, draw, ground, nv_vec3_sub(ground, nv_vec3_scale(across, stop)), text, DIMENSION_STOP_COLOR, 0.0f, 1.0f);
     }
     // The distance to the unit's target, on the ground (as the rules measure it).
-    if (unit->target.index) {
+    if ((shown & LAB_SHOW_DISTANCE) && unit->target.index) {
         NvVec3 target = drawn[unit->target.index];
         NvVec3 there = nv_vec3(target.x, 0.05f, target.z);
         f32 dx = there.x - ground.x, dz = there.z - ground.z;
@@ -262,11 +265,12 @@ void lab_view_overlay(Game* game)
             continue;
         const UnitDef* def = &battle->defs->units[body->def];
         NvVec3 base = drawn[slot];
-        if (def->layer == UNIT_LAYER_AIR) {
+        if ((shown & LAB_SHOW_ALTITUDE) && def->layer == UNIT_LAYER_AIR) {
             snprintf(text, sizeof(text), T("Altitude %.1f m"), base.y);
             draw_dimension(game, draw, nv_vec3(base.x, 0.0f, base.z), base, text, DIMENSION_DISTANCE_COLOR, 0.0f, 1.0f);
         }
-        draw_body_dimensions(game, draw, base, def, right);
+        if (shown & LAB_SHOW_SIZES)
+            draw_body_dimensions(game, draw, base, def, right);
     }
 }
 
@@ -307,12 +311,28 @@ internal void conditions_section(Game* game)
     changed |= lab_number(TL("Air altitude (m)"), &settings->air_altitude, 0.1f, 1.0f, 50.0f, "%.1f");
     changed |= lab_number(TL("Respawn delay (s)"), &settings->respawn_delay, 0.01f, 0.0f, 10.0f, "%.2f");
     igPopItemWidth();
-    // What the view draws, not a change of the run.
-    b32 dimensions = !game->lab_hide_dimensions;
-    if (lab_checkbox(TL("Dimensions"), &dimensions))
-        game->lab_hide_dimensions = !dimensions;
     if (changed)
         game_lab_settings_changed(game);
+}
+
+// What the view draws over the units, a box each, two to a row. Not a change of the run.
+internal void view_section(Game* game)
+{
+    if (!igCollapsingHeader_TreeNodeFlags(TL("View"), ImGuiTreeNodeFlags_DefaultOpen))
+        return;
+    const struct { u32 bit; const char* label; } boxes[] = {
+        {LAB_SHOW_RANGE, TL("Range")},           {LAB_SHOW_STOP, TL("Stop distance")}, {LAB_SHOW_DISTANCE, TL("Distance to target")},
+        {LAB_SHOW_ALTITUDE, TL("Altitude")},     {LAB_SHOW_SIZES, TL("Body sizes")},    {LAB_SHOW_PATHS, TL("Target paths")},
+    };
+    if (!igBeginTable("lab_view", 2, ImGuiTableFlags_SizingStretchSame, (ImVec2_c){0, 0}, 0.0f))
+        return;
+    for (u32 i = 0; i < NV_ARRAY_COUNT(boxes); ++i) {
+        igTableNextColumn();
+        b32 on = !(game->lab_hidden & boxes[i].bit);
+        if (lab_checkbox(boxes[i].label, &on))
+            game->lab_hidden = on ? game->lab_hidden & ~boxes[i].bit : game->lab_hidden | boxes[i].bit;
+    }
+    igEndTable();
 }
 
 // The lab's unit def as the project's text has it: a change writes the text (game_set_unit_value).
@@ -484,6 +504,7 @@ void lab_view_panel(Game* game)
     igText(T("Time: %.1f s (%u ticks)"), (f32)lab->battle.tick * BATTLE_TICK_SECONDS, lab->battle.tick);
 
     conditions_section(game);
+    view_section(game);
     unit_section(game);
     results_section(game);
     igSeparator();

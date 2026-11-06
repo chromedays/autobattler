@@ -57,6 +57,17 @@ typedef struct UnitValueKey {
     f32 speed, min, max; // the drag's; the project's reader judges
 } UnitValueKey;
 
+// What the lab draws over its units, each on a box of the panel's View section (game->lab_hidden). A ring and its dimension go
+// together.
+enum {
+    LAB_SHOW_RANGE = 1 << 0,    // the range ring and its dimension
+    LAB_SHOW_STOP = 1 << 1,     // the stop distance's ring and its dimension (when the unit walks)
+    LAB_SHOW_DISTANCE = 1 << 2, // to the unit's target
+    LAB_SHOW_ALTITUDE = 1 << 3, // air units' heights over the ground
+    LAB_SHOW_SIZES = 1 << 4,    // every body's height and width
+    LAB_SHOW_PATHS = 1 << 5,    // the ways moving targets go
+};
+
 // The field's planes.
 enum { FIELD_GROUND, FIELD_PLAYER_ZONE, FIELD_ENEMY_ZONE, FIELD_PLANE_COUNT };
 
@@ -144,7 +155,7 @@ typedef struct Game {
     NvMeshId lab_meshes[LAB_DEF_COUNT];
     f32 lab_mesh_sizes[LAB_DEF_COUNT][2]; // the radius and height each lab mesh was made for
     NvMaterialId target_material, target_out_of_reach_material;
-    b32 lab_hide_dimensions; // the Lab section's Dimensions box, off: a view setting, not saved and not a change of the run
+    u32 lab_hidden; // the lab's View section: the LAB_SHOW_* it hides (0 shows all); not saved and not a change of the run
 } Game;
 
 // main.c
