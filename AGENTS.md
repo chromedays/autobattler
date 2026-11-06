@@ -28,9 +28,10 @@ what is the game's.
 
 ```
 src/                       the game: battle.c/.h (the rules and the 30 Hz tick; no GPU), defs.c (reads data/default.abproj),
-                           lab.c/.h (the unit lab's runs on those rules; no GPU), main.c (window, frame loop, debug exports),
-                           battle_view.c (drawing, deployment input, the Battle panel), lab_view.c (the unit lab's camera, lines
-                           and panel sections), game.h (its state), strings.c (its Korean table)
+                           lab.c/.h (the unit lab's runs on those rules; no GPU), menu.c/.h (the main menu round's placement; no
+                           GPU), main.c (window, frame loop, screens, debug exports), battle_view.c (drawing, deployment input, the
+                           Battle panel), lab_view.c (the unit lab's camera, lines and panel sections), menu_view.c (the main menu:
+                           its round, camera and window), game.h (its state), strings.c (its Korean table)
 data/default.abproj        the rules, the units (the wiki's unit_stats.csv) and the stage (docs/specs/abproj.md, unit_fields.md)
 engine/                    the engine, a submodule: its headers are included as <engine/name.h>; the UI font is engine/assets/fonts/
 tests/                     tests that need no browser, built for Node (web) or natively (Windows) and run with ctest
@@ -122,8 +123,15 @@ Follow `engine/AGENTS.md` ("Conventions") and `engine/docs/CODING_STANDARD.md`. 
   `_battle_debug_project_action`, `_battle_debug_project_message`, `_battle_debug_set_rule`, `_battle_debug_project_text`,
   `_battle_debug_unit_roles`, `_battle_debug_set_role_filter`, `_battle_debug_load_test`, and for the unit lab `_battle_debug_lab(n)`,
   `_battle_debug_lab_enter`, `_battle_debug_lab_set`, `_battle_debug_lab_action`, `_battle_debug_lab_run` and
-  `_battle_debug_set_unit_value` (values in hundredths, so the Windows script can pass them) for tests; on Windows a new export is also a
-  row of `battle_debug_calls` in `src/main.c`.
+  `_battle_debug_set_unit_value` (values in hundredths, so the Windows script can pass them), and for the main menu `_battle_debug_menu(n)`
+  and `_battle_debug_menu_action` for tests; on Windows a new export is also a row of `battle_debug_calls` in `src/main.c`.
+- The main menu (`docs/specs/main_menu.md`): the game starts at it (Start Game, Quit) over a round of its own (`Game.menu_battle`: the
+  stage's enemy against its mirror, `menu_place_mirrored`, at 1x and again once over; it never touches the player's deployment), and the
+  panel's Main menu and Esc go back to it (a running round goes back to deployment, the lab to the battle). `--editor` (`?editor` on the web,
+  where the engine's page makes the address's options `argv`) starts in the game with no menu (`Game.editor`). Quit is `nv_quit`, which
+  ends the program on both platforms; never `exit`, which on the web leaves the frame loop running. Screens change through
+  `game_set_screen` (a fade); the menu turns on ImGui's keyboard navigation for itself and off for the game screen. Tests that expect the
+  game screen at start open `?editor` (the Windows script `--editor`).
 - The unit lab (`docs/specs/unit_lab.md`; the panel's `Unit Lab` mode button, from deployment only): one unit of a unit def (one of a
   squad) against a ground and an air target, on `battle.c`'s own rules. `lab.c` keeps its own small `BattleDefs` (the unit def, the two
   targets) and `Battle`; the targets are `UNIT_DUMMY` units (no target, no fire, moved by the velocity the lab sets), a unit that holds

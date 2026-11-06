@@ -1,6 +1,6 @@
 # 메인 메뉴 스펙 (Main Menu)
 
-상태: 초안 (2026-11-06). 같은 날 GAME과 EDITOR로 나누는 것을 더했다("GAME과 EDITOR" 절; `build_dashboard.md`의 "게임과 에디터").
+상태: 구현됨, 웹 (2026-11-06). Windows 빌드와 스크립트 검사는 아직 하지 않았다("단계" 4). 같은 날 GAME과 EDITOR로 나누는 것을 더했다("GAME과 EDITOR" 절; `build_dashboard.md`의 "게임과 에디터").
 같은 날 메뉴의 버튼을 Start Game과 Quit 둘로 줄였다(설정 페이지와 Unit Lab 버튼을 뺐다; 둘 다 게임 화면의 패널에 있다).
 
 ### 목표
@@ -101,13 +101,14 @@
 그림자; `battle_view.c`).
 
 - **배치:** 적 편은 스테이지의 배치 그대로(`stage`의 `place`). 아군은 그 적 배치를 전장 가운데에 대해 **점대칭으로 비춘 것**이다: 분대의
-  모서리 칸 `(x, row)`는 `(grid_w − x − footprint_w, grid_l − row − footprint_d)`로 간다. 구역이 대칭이 아니어서 비춘 자리가 플레이어 구역
-  밖이거나 공급을 넘으면 그 분대는 빠진다(`battle_place`가 거절한 것은 건너뛴다). 플레이어의 배치와 상관없다.
+  모서리 칸 `(x, row)`는 `(grid_w − x − footprint_w, grid_l − row − footprint_d)`로 간다(`menu_place_mirrored`, `src/menu.c`). 비춘 자리에
+  놓을 수 없는 분대는 빠진다(`battle_place`가 거절한 것은 건너뛴다). 두 구역과 공급은 같으므로 읽힌 프로젝트의 스테이지는 모두 놓이고,
+  빠지는 것은 손으로 만든 정의(구역 밖에 선 적 분대 등)뿐이다. 플레이어의 배치와 상관없다.
 - **돌리기:** 메뉴에 들어오면 바로 Start, 1배속(30 Hz 틱, 게임과 같은 누산기). 라운드가 끝나면 결과 그대로 3초 멈춘 뒤 이펙트를 지우고 처음부터
   다시 한다. 시드는 스테이지의 것이라 매번 같은 판이다(규칙이 결정적이므로; 열린 질문 2).
 - **카메라:** 사용자가 움직이지 않는다(메뉴의 뷰포트 입력은 버린다). 전장 가운데를 보며 초당 4°로 돌고, 피치 35°, 거리는 게임의 처음
-  카메라 거리의 0.75배다(전장이 화면을 채우도록 가까이). 넓은 화면에서는 보는 점을 오른쪽으로 전장 폭의 15%만큼 옮긴다(왼쪽의 버튼에
-  전투가 가리지 않게). 그림자 거리는 게임과 같은 규칙(카메라 거리 × 1.6).
+  카메라 거리의 0.75배다(전장이 화면을 채우도록 가까이). 넓은 화면에서는 보는 점을 화면의 왼쪽으로 전장 폭의 15%만큼 옮겨, 전장이
+  왼쪽의 버튼보다 오른쪽에 보이게 한다. 그림자 거리는 게임과 같은 규칙(카메라 거리 × 1.6).
 - **그리지 않는 것:** 배치 격자, 구역 평면, 마우스가 가리키는 footprint, 체력 바. 땅은 그린다.
 - **정의가 없을 때:** 정의를 읽지 못했으면 배경 전투는 없고, 빈 땅을 같은 카메라로 돈다.
 - **프로젝트가 바뀌면:** 게임 화면에서 다른 프로젝트를 열거나 규칙, 유닛 값을 고친 뒤 메뉴로 오면, 배경 전투는 지금의 정의로 다시 만든다
@@ -143,8 +144,9 @@ ImGui 창 하나다(`NoDecoration | NoBackground | NoMove | NoSavedSettings`). �
 - **`void nv_quit(void)`(`engine/window.h`, `nv_window_run` 옆):** 프로그램을 끝낸다. 부른 프레임을 끝까지 돈 뒤(GPU 프레임이 반쯤 열린
   채 끝나지 않게) `nv_window_run`의 루프가 멈춘다. 그 전에 `nv_window_on_hidden`의 콜백을 부른다(창을 닫을 때처럼 저장할 마지막 때).
   - Windows: 프로세스가 끝난다(종료 코드 0). 창을 닫았을 때 루프가 하는 `ExitProcess`와 같다.
-  - 웹: 메인 루프를 멈추고(`emscripten_cancel_main_loop`) 런타임을 끝낸다(`emscripten_force_exit(0)`). 엔진의 페이지(`web/index.html.in`)가
-    캔버스를 감추고 로딩 글자 자리에 한 줄을 보인다: "The program has ended. Reload the page to start it again."
+  - 웹: 메인 루프를 멈춘다(`emscripten_cancel_main_loop`). 엔진의 페이지(`web/index.html.in`)가 캔버스를 로딩 화면으로 덮고 한 줄과 Reload
+    버튼을 보인다: "The program has ended. Reload the page to start it again." 런타임을 끝내는 `emscripten_force_exit`는 쓰지 않는다:
+    `EXIT_RUNTIME` 없는 빌드에서는 런타임을 끝내지 못하고, Debug 빌드에서는 경고를 오류 출력에 남긴다(`page_loading.md`의 "인수와 끝").
   - 헤드리스 창: 루프를 끝낸다.
   - 왜 게임의 `exit(0)`이 아닌가: Windows만이면 `exit(0)`으로 충분하다(엔진도 끝날 때 아무것도 정리하지 않는다). 하지만 웹에서는 메인 루프가
     런타임을 살려 두므로 `exit(0)`은 부른 프레임에서 빠져나오기만 하고 다음 프레임이 그대로 돈다(Emscripten의 `libcore.js`: "halting
@@ -171,16 +173,17 @@ JavaScript를 부르지 않고 `_WIN32`, `__EMSCRIPTEN__`을 보지 않는다; `
 |---|---|
 | `src/game.h` | `Game.editor`, `GameScreen`(`GAME_SCREEN_MENU`, `GAME_SCREEN_PLAY`), `Game.screen`, `menu_battle`, 배경 전투의 끝난 뒤 기다림과 카메라 각도, 페이드 상태(`fade_time`, `fade_to`) |
 | `src/main.c` | `main(int argc, char** argv)`가 `--editor`로 `Game.editor`를 정하고 첫 화면을 고른다, `game_set_screen`(페이드를 시작하고, 중간에 화면을 바꾸고 "게임에서 메뉴로"의 일을 한다), 프레임 루프가 화면에 따라 메뉴나 게임을 돌린다, 배치(메뉴는 뷰포트가 전체 화면이고 패널과 막대가 없다), 디버그 내보내기와 Windows 행 |
+| `src/menu.c`, `menu.h` (새 파일) | `menu_place_mirrored`: 배경 전투의 점대칭 배치. GPU, ImGui, 시계 없음 |
 | `src/menu_view.c` (새 파일) | 배경 전투 만들기와 돌리기(`menu_view_start`, `menu_view_tick`), 그 카메라, 메뉴 창, 가림막, 페이드 |
 | `src/battle_view.c` | 패널의 Main menu 버튼, Esc(둘 다 GAME에서만). 유닛과 포탄 그리기를 배경 전투에도 쓴다(`game_shown_battle`이 메뉴에서는 `menu_battle`을 준다) |
 | `src/strings.c` | 메뉴의 한국어 행 |
-| `CMakeLists.txt` | `menu_view.c` |
+| `CMakeLists.txt`, `tests/CMakeLists.txt` | `menu.c`, `menu_view.c`; 테스트에 `menu.c` |
 
 `battle.c`는 바뀌지 않는다(배경 전투는 `battle_place`, `battle_start`, `battle_tick`, `battle_retry`만 쓴다).
 
 ### 디버그 내보내기 (Debug 빌드)
 
-- `_battle_debug_menu(n)`: 0 화면(0 메뉴, 1 게임), 1 배경 전투의 틱, 2 배경 전투의 유닛 수, 3 배경 전투를 몇 번 다시 시작했나, 4 페이드
+- `_battle_debug_menu(n)`: 0 화면(0 메뉴, 1 게임), 1 배경 전투의 틱, 2 배경 전투의 유닛 수, 3 배경 전투가 몇 번 시작했나, 4 페이드
   중인가, 5 지난 프레임에 그린 메뉴 버튼 수, 6 EDITOR인가.
 - `_battle_debug_menu_action(action)`: 0 Start Game, 1 Quit, 2 Main menu(게임에서). 버튼과 같이 하고, 그 버튼이 지금 보이지 않으면
   (EDITOR에서는 모두) 0. 페이드는 건너뛰어 다음 프레임에 바뀐 화면이 보인다(테스트가 기다리지 않게).
@@ -190,11 +193,12 @@ JavaScript를 부르지 않고 `_WIN32`, `__EMSCRIPTEN__`을 보지 않는다; `
 
 ### 테스트
 
-`battle.c`가 바뀌지 않으므로 `tests/battle_test.c`는 그대로다. 배경 전투의 배치(비추기)는 GPU가 없는 함수(`menu_mirror_placement` 같은,
-`BattleDefs`에서 `Battle`에 놓기만 하는 것)로 두고 `tests/battle_test.c`가 테스트 안의 텍스트로 확인한다:
+`battle.c`가 바뀌지 않으므로 `tests/battle_test.c`는 그대로다. 배경 전투의 배치(비추기)는 GPU가 없는 함수(`menu_place_mirrored`, `src/menu.c`)라
+`tests/battle_test.c`의 `test_menu_round`가 테스트 안의 정의로 확인한다:
 
-- **비추기:** 적 분대마다 점대칭 자리의 아군 분대가 하나씩, 같은 정의다. footprint가 정사각형이 아닌 분대도 자리가 맞다.
-- **빠지는 분대:** 구역이 대칭이 아닌 규칙(`zone_rows`가 다르게)에서는 비춘 자리가 구역 밖인 분대가 빠지고, 나머지는 놓인다.
+- **비추기:** 적 분대마다 점대칭 자리의 아군 분대가 하나씩, 같은 정의다. footprint가 정사각형이 아닌 분대도 자리가 맞다. 어느 단계에서
+  다시 놓아도 빈 아군에서 시작한다.
+- **빠지는 분대:** 구역 밖에 선 적 분대는 비춘 자리도 플레이어 구역 밖이라 빠지고, 나머지는 놓인다.
 - **결정론:** 배경 전투를 두 번 돌리면 같은 해시다.
 
 Playwright(Release, Debug, 데스크톱과 폰 크기; 손으로 돌리는 검사): `?editor`로 열면 메뉴 없이 배치 단계이고 패널에 Main menu가 없으며
@@ -228,8 +232,10 @@ Esc가 아무것도 하지 않는다; 옵션 없이 열면 메뉴로 열리고 �
 2. **화면과 메뉴:** `Game.editor`(EDITOR는 지금 그대로 시작), `GameScreen`, `game_set_screen`, `menu_view.c`의 메뉴 창(Start Game, Quit), 레이아웃, Main menu 버튼과 Esc, 페이드, 한국어 행.
    배경 전투 없이 빈 땅으로.
 3. **배경 전투:** 비추기와 그 테스트, 돌리기와 다시 시작, 카메라.
-4. **확인과 문서:** 디버그 내보내기(Windows 행 포함), Playwright 검사, 웹과 Windows의 Release와 Debug 빌드, Windows 스크립트, `AGENTS.md`(파일
-   목록, 내보내기, 메뉴 규칙)와 `battle.md`("실행 파일"이 메뉴로 시작함)에서 이 스펙으로의 연결.
+   1–3은 끝났다(웹). 엔진은 브랜치 `quit-and-page-arguments`.
+4. **확인과 문서 (웹은 끝남):** 디버그 내보내기(Windows 행 포함), Playwright 검사, 웹과 Windows의 Release와 Debug 빌드, Windows 스크립트, `AGENTS.md`(파일
+   목록, 내보내기, 메뉴 규칙)와 `battle.md`("실행 파일"이 메뉴로 시작함)에서 이 스펙으로의 연결. Windows의 Release와 Debug 빌드와
+   스크립트 검사가 남았다.
 
 ### 나중에 (이 스펙 밖)
 

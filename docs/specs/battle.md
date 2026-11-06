@@ -430,6 +430,8 @@ float는 같은 빌드 안에서 결정적이고 `sinf` 같은 libm 함수도 �
 
 ### 실행 파일
 
+- **시작:** 메인 메뉴로 시작한다(`docs/specs/main_menu.md`). 메뉴의 Start Game이 아래의 화면으로 가고, 패널의 Main menu와 Esc가 돌아간다.
+  `?editor`(Windows는 `--editor`)는 메뉴 없이 아래의 화면으로 바로 시작한다.
 - **페이지:** 기본 브랜치와 열린 PR이 있는 브랜치의 Release와 Debug가 빌드 대시보드에 올라간다(`docs/specs/build_dashboard.md`;
   처음에는 Pages의 `autobattler/release/`, `autobattler/debug/`, `autobattler/<branch>/`였고 2026-10-29에 옮겼다). 샌드박스와
   따로 내려받는다.
@@ -1045,6 +1047,8 @@ The engine is the Git submodule `engine/`, added with `add_subdirectory(engine)`
 
 ### Executable
 
+- **Start:** it starts at the main menu (`docs/specs/main_menu.md`). The menu's Start Game goes to the screen below, and the
+  panel's Main menu and Esc go back. `?editor` (`--editor` on Windows) starts on the screen below at once, with no menu.
 - **Page:** the Release and Debug builds of the default branch and of every branch with an open pull request are on the build
   dashboard (`docs/specs/build_dashboard.md`; at first on Pages at `autobattler/release/`, `autobattler/debug/` and
   `autobattler/<branch>/`, moved 2026-10-29). Downloaded apart from the sandbox.

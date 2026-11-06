@@ -49,6 +49,12 @@ typedef enum ProjectAction { PROJECT_OPEN, PROJECT_RELOAD, PROJECT_SAVE, PROJECT
 // What the viewport and the panel show: the battle, or the unit lab (docs/specs/unit_lab.md).
 typedef enum GameMode { GAME_MODE_BATTLE, GAME_MODE_LAB } GameMode;
 
+// What the window shows (docs/specs/main_menu.md): the main menu over its background battle, or the game (the viewport, the
+// panel and the playback bar, in a GameMode). The editor start (--editor; ?editor on the web) has no menu.
+typedef enum GameScreen { GAME_SCREEN_MENU, GAME_SCREEN_PLAY } GameScreen;
+// A change of screen fades to black and back over this long; the screen changes halfway.
+#define SCREEN_FADE_SECONDS 0.25f
+
 // A number key of a unit def the lab's Unit section edits (docs/specs/unit_lab.md, "Editing the unit's values"): its key in the
 // file, where it is in a UnitDef, how its widget drags and when it is shown. `offset` is into the UnitDef. UNIT_VALUE_WHOLE is
 // a float the file writes as an integer (hp, armor, shield_hp, damage).
@@ -182,6 +188,18 @@ typedef struct Game {
     b32 touch; // the primary pointer is a finger (the engine's ui_scale > 1)
     f32 ui_zoom, ui_zoom_wanted;
     ImGuiStyle base_style;
+
+    // The main menu (menu_view.c, docs/specs/main_menu.md). Its round is its own and never touches the player's deployment.
+    b32 editor; // started with --editor: the game screen at once, and no menu ever
+    GameScreen screen;
+    f32 fade;           // seconds into a change of screen (game_set_screen); 0 while none runs
+    GameScreen fade_to; // the screen it changes to
+    Battle menu_battle;
+    f32 menu_wait;          // seconds the menu's ended round has stood
+    u32 menu_starts;        // how many times the menu's round started (debug)
+    f32 menu_yaw;           // the menu camera's turn around the field
+    u32 menu_buttons_shown; // last frame (debug)
+    f32 menu_buttons[4];    // the buttons' rectangle last frame, CSS pixels: x, y, width, height (debug)
 } Game;
 
 // main.c
@@ -204,8 +222,11 @@ b32 game_set_mode(Game* game, GameMode mode);
 void game_lab_settings_changed(Game* game);
 // The lab's unit def: another one starts a run, its targets at its own default distance.
 void game_lab_choose_unit(Game* game, u32 def);
-// The battle the view draws and the frame runs: the round's, or the lab's.
+// The battle the view draws and the frame runs: the round's, the lab's, or on the main menu the menu's.
 Battle* game_shown_battle(Game* game);
+// Changing screen (docs/specs/main_menu.md): a fade, and halfway the change itself. Going to the menu puts a running round back
+// in deployment (the placement stays) and the lab back in the battle. Nothing for the editor start, or while a fade runs.
+void game_set_screen(Game* game, GameScreen screen);
 // Whether a project button can be pressed now, and pressing it (it starts a dialog, read or write; false when it cannot).
 b32 game_project_action_allowed(const Game* game, ProjectAction action);
 b32 game_project_action(Game* game, ProjectAction action);
@@ -235,6 +256,11 @@ void lab_view_overlay(Game* game); // every frame in the lab, after the camera i
 void lab_view_panel(Game* game);  // the panel's lab sections
 void lab_view_restart(Game* game); // the bar's Restart: the run starts over
 const UnitValueKey* lab_unit_value_key(u32 index); // NULL past the last
+
+// menu_view.c
+void menu_view_start(Game* game);          // the menu's round from the start, for the project in place
+void menu_view_tick(Game* game, f32 dt);   // every frame on the menu: its round at 1x (and again once over), its camera
+void menu_view_window(Game* game);         // every frame on the menu: the title, Start Game and Quit, and the veil under them
 
 // strings.c
 void game_strings_init(void);

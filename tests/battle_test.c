@@ -6,6 +6,7 @@
 #include "battle.h"
 #include "engine/log.h"
 #include "lab.h"
+#include "menu.h"
 
 #include <math.h>
 #include <stdio.h>
@@ -2331,6 +2332,48 @@ internal void test_whole_round(void)
 
 // Rounds on full_project came to these when the units became the wiki's (unit_fields.md): the hash at tick 300 and at the end.
 // A change to the rules that changes a round changes these on purpose.
+// The main menu's round (src/menu.c, docs/specs/main_menu.md, "Background battle"): the player's side is the stage's enemy
+// mirrored through the field's middle.
+internal void test_menu_round(void)
+{
+    // 0 "Shooter": squads of 2 on 2 x 1 cells (not square, so a mirror that swapped the sides would show). 1 "Dummy": one cell.
+    scene_defs();
+    defs.units[0].squad_size = 2;
+    defs.units[0].footprint_w = 2;
+    defs.enemy_count = 2;
+    defs.enemy[0] = (StagePlace){0, 5, 40};
+    defs.enemy[1] = (StagePlace){1, 0, 47};
+    battle_init(&battle, &defs);
+    CHECK(menu_place_mirrored(&battle) == 2);
+    // (x, row) goes to (32 - x - w, 48 - row - d): the Shooters' corner (5, 40) to (25, 7), the Dummy's (0, 47) to (31, 0).
+    CHECK(battle.placed[7][25] == 1 && battle.placed[0][31] == 2);
+    CHECK(battle.player_units == 3 && battle_supply_left(&battle) == defs.supply - 200);
+
+    // Placing again starts from an empty side, from any phase.
+    CHECK(battle_start(&battle));
+    run(10);
+    CHECK(menu_place_mirrored(&battle) == 2 && battle.phase == BATTLE_DEPLOY && battle.player_units == 3);
+
+    // A squad whose mirror cannot be placed (this enemy stands outside its zone, so its mirror is outside the player's) is left
+    // out; the others are placed.
+    defs.enemy[1] = (StagePlace){1, 3, 20};
+    battle_init(&battle, &defs);
+    CHECK(menu_place_mirrored(&battle) == 1 && battle.player_units == 2);
+
+    // The same round twice gives the same state.
+    defs.enemy[1] = (StagePlace){1, 0, 47};
+    defs.units[0].range = 30.0f;
+    u32 hashes[2];
+    for (u32 i = 0; i < 2; ++i) {
+        battle_init(&battle, &defs);
+        menu_place_mirrored(&battle);
+        CHECK(battle_start(&battle));
+        run(300);
+        hashes[i] = battle_hash(&battle);
+    }
+    CHECK(hashes[0] == hashes[1]);
+}
+
 internal void test_golden_rounds(void)
 {
     load_full_project();
@@ -3039,6 +3082,7 @@ int main(void)
     test_layers_in_use();
     test_whole_round();
     test_golden_rounds();
+    test_menu_round();
     test_seek();
     test_lab_setup();
     test_lab_hold();
