@@ -601,16 +601,23 @@ internal void rule_integers(Game* game, const char* key, const char* label, u32 
 }
 
 // The rules of the project in place, editable before a round. A change is put in place at once; Save writes it to the file.
+// The unit lab (docs/specs/unit_lab.md, "Panel") shows only the rules that change how a unit fights there, under a header of
+// its own that starts closed: it has no zones, no round time, and a field whose size only bounds its targets' distance.
 internal void rules_section(Game* game)
 {
-    if (!game->project_size || !igCollapsingHeader_TreeNodeFlags(TL("Rules"), ImGuiTreeNodeFlags_DefaultOpen))
+    b32 lab = game->mode == GAME_MODE_LAB;
+    char header[64];
+    snprintf(header, sizeof(header), "%s###%s", T("Rules"), lab ? "lab_rules" : "Rules");
+    if (!game->project_size || !igCollapsingHeader_TreeNodeFlags(header, lab ? 0 : ImGuiTreeNodeFlags_DefaultOpen))
         return;
     igBeginDisabled(!game_rules_editable(game));
     igPushItemWidth(igGetFontSize() * 8.0f);
-    rule_number(game, "cell_size", TL("Cell size (m)"), 0.01f, 0.1f, 10.0f, "%.2f");
-    rule_integers(game, "grid", TL("Grid (across, long)"), 2, 0.1f, 1, BATTLE_MAX_GRID_LENGTH);
-    rule_integers(game, "zone_rows", TL("Zone rows"), 1, 0.1f, 1, BATTLE_MAX_ZONE_ROWS);
-    rule_number(game, "round_time", TL("Round time (s)"), 0.5f, 1.0f, 600.0f, "%.1f");
+    if (!lab) {
+        rule_number(game, "cell_size", TL("Cell size (m)"), 0.01f, 0.1f, 10.0f, "%.2f");
+        rule_integers(game, "grid", TL("Grid (across, long)"), 2, 0.1f, 1, BATTLE_MAX_GRID_LENGTH);
+        rule_integers(game, "zone_rows", TL("Zone rows"), 1, 0.1f, 1, BATTLE_MAX_ZONE_ROWS);
+        rule_number(game, "round_time", TL("Round time (s)"), 0.5f, 1.0f, 600.0f, "%.1f");
+    }
     rule_number(game, "gravity", TL("Gravity (m/s²)"), 0.05f, 0.1f, 100.0f, "%.2f");
     rule_number(game, "retarget_interval", TL("Retarget interval (s)"), 0.01f, 0.01f, 10.0f, "%.2f");
     rule_number(game, "stop_fraction", TL("Stop fraction"), 0.005f, 0.01f, 1.0f, "%.3f");
@@ -651,9 +658,10 @@ internal void start_over(Game* game)
     game->accumulator = 0.0f;
 }
 
-// The role filter and the unit types: one button each, the chosen one lit. A squad of several says how many ("Crawler x6 (100)").
-// A unit type that lacks a lit role is left out; the chosen one stays chosen. True when a button was pressed.
-b32 view_unit_buttons(Game* game, u32* selected, b32 enabled)
+// The role filter and the unit types: one button each, the chosen one lit. For deployment a squad of several says how many and
+// what it costs ("Crawler x6 (100)"); otherwise a button is the name alone. A unit type that lacks a lit role is left out; the
+// chosen one stays chosen. True when a button was pressed.
+b32 view_unit_buttons(Game* game, u32* selected, b32 enabled, b32 deployment)
 {
     const BattleDefs* defs = &game->defs;
     if (defs->role_count) {
@@ -680,7 +688,9 @@ b32 view_unit_buttons(Game* game, u32* selected, b32 enabled)
             continue;
         const UnitDef* def = &defs->units[i];
         char label[BATTLE_NAME_SIZE + 32];
-        if (def->squad_size > 1)
+        if (!deployment)
+            snprintf(label, sizeof(label), "%s###unit%u", def->name, i);
+        else if (def->squad_size > 1)
             snprintf(label, sizeof(label), "%s x%u (%u)###unit%u", def->name, def->squad_size, def->cost, i);
         else
             snprintf(label, sizeof(label), "%s (%u)###unit%u", def->name, def->cost, i);
@@ -841,7 +851,7 @@ void view_panel(Game* game)
             igEnd();
             return;
         }
-        view_unit_buttons(game, &game->selected_def, battle->phase == BATTLE_DEPLOY);
+        view_unit_buttons(game, &game->selected_def, battle->phase == BATTLE_DEPLOY, true);
 
         b32 can_start = battle->phase == BATTLE_DEPLOY && battle_alive_count(battle, TEAM_PLAYER) > 0;
         igBeginDisabled(!can_start);

@@ -55,6 +55,7 @@ typedef struct UnitValueKey {
     UnitValueKind kind;
     u32 offset;
     f32 speed, min, max; // the drag's; the project's reader judges
+    b32 battle_only;     // the lab's run does not read it (it is for deployment): shown last, under its own heading
 } UnitValueKey;
 
 // What the lab draws over its units, each on a box of the panel's View section (game->lab_hidden). A ring and its dimension go
@@ -197,7 +198,8 @@ void view_draw_build_label(Game* game);
 // Shared with lab_view.c.
 void view_set_unit_mesh(Game* game, NvMeshId* mesh, const UnitDef* def); // made, or remade in its slot
 void view_draw_ring(NvRenderer* renderer, NvVec3 center, NvVec3 u, NvVec3 v, f32 radius, NvVec3 color);
-b32 view_unit_buttons(Game* game, u32* selected, b32 enabled); // the role filter and a button per unit def; true when one was pressed
+// The role filter and a button per unit def (with its squad and cost for `deployment`); true when one was pressed.
+b32 view_unit_buttons(Game* game, u32* selected, b32 enabled, b32 deployment);
 void view_time_controls(Game* game, b32 can_step_back, b32 can_step_forward);
 
 // lab_view.c

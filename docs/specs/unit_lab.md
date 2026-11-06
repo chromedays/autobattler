@@ -147,7 +147,8 @@ Reset results 버튼은 측정값만 지운다(실험은 그대로 이어진다)
 
 - **고칠 수 있는 키(수만):** 유닛의 `cost`, `squad`, `footprint`, `health`, `armor`, `speed`, `radius`, `height`, `altitude`(공중 유닛만),
   무기의 `range`, `damage`, `cooldown`, `launch_angle`, `spread`, `muzzle`(셋), 실드의 `radius`, `capacity`, `regen`, `regen_delay`.
-  위젯은 파일의 단위로 보인다(각도는 도, 시간은 초).
+  위젯은 파일의 단위로 보인다(각도는 도, 시간은 초). 실험이 읽지 않는 `cost`, `squad`, `footprint`(배치의 값)는 맨 아래 "Battle only"
+  제목 아래에 둔다(키 표의 `battle_only`).
 - **이번에 고치지 않는 것:** 이름, `layer`, `targets`, `roles`(낱말과 이름), 무기나 능력 블록을 더하거나 빼기. "나중에" 절.
 - **글이 원본이다.** `defs_unit_get(text, size, unit, block, key, values)`가 값을 읽고 `defs_unit_set(...)`이 그 키의 줄에서 값만 바꾼
   글을 만든다. `block`은 유닛, 무기, 능력 중 하나다. 값의 쓰기, 들여쓰기, 주석 열은 `defs_rule_set`과 같다(같은 도우미를 쓴다).
@@ -200,11 +201,13 @@ Range(사거리 원과 그 치수), Stop distance(정지 거리 원과 그 치�
 ### 패널
 
 실험실 모드에서 위에서 아래로: 단계 대신 "Unit Lab", 언어 콤보, 모드 버튼, 프로젝트 줄(Open..., Reload, Save, Save as...), Rules
-절(전투와 같다), 유닛 고르기(유닛 종류 버튼과 레이어 줄; 역할 필터는 전투와 같이 쓴다), 분대 줄("A squad of 6: the lab tries one of
-them."), Restart 버튼과 Restart on change 체크, 시간 버튼, 실험 시간, Lab 절(실험 조건, 펼침), View 절(그리는 것의 체크, 펼침), Unit 절(유닛 값 고치기, 접힘), Results 절
-(측정값, 빗나감, 기대값, 바꾼 횟수, Reset results; 펼침), 짧은 도움말. 패널은 길어서 세로로 스크롤한다. 모든 글자는 `T()`/`TL()`을
-거치고 한국어 행을 `src/strings.c`에 더한다. Unit 절의 이름표는 키 표(`lab_view.c`의 `unit_value_keys`, `.label =`)에 있고 보일 때
-`T()`를 거친다.
+절(접힌 채 시작; 실험실에서 싸움을 바꾸는 넷만: Gravity, Retarget interval, Stop fraction, Min. damage fraction. 구역이 없고 라운드가
+끝나지 않으며 전장 크기는 표적 거리의 한계일 뿐이라, Cell size, Grid, Zone rows, Round time은 보이지 않는다), 유닛 고르기(이름만의 버튼과
+레이어 줄; 분대 수와 비용은 배치의 정보라 버튼에 쓰지 않는다; 역할 필터는 전투와 같이 쓴다), 분대 줄("A squad of 6: the lab tries one of
+them."), Restart 버튼과 Restart on change 체크, 시간 버튼, 실험 시간, Lab 절(실험 조건, 펼침), View 절(그리는 것의 체크, 펼침), Unit 절(유닛 값
+고치기, 접힘), Results 절(측정값, 빗나감, 기대값, 바꾼 횟수, Reset results; 펼침), 짧은 도움말. 패널은 길어서 세로로 스크롤한다. 모든 글자는
+`T()`/`TL()`을 거치고 한국어 행을 `src/strings.c`에 더한다. Unit 절의 이름표는 키 표(`lab_view.c`의 `unit_value_keys`, `.label =`)에 있고
+보일 때 `T()`를 거친다.
 
 ### 코드 위치
 

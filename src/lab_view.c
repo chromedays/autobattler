@@ -16,11 +16,11 @@
 // shown; strings_test finds them by their `.label =`.
 global const UnitValueKey unit_value_keys[] = {
     {.block = DEFS_BLOCK_UNIT, .key = "cost", .label = "Cost", .kind = UNIT_VALUE_INTEGER,
-     .offset = offsetof(UnitDef, cost), .speed = 1.0f, .min = 1.0f, .max = 10000.0f},
+     .offset = offsetof(UnitDef, cost), .speed = 1.0f, .min = 1.0f, .max = 10000.0f, .battle_only = true},
     {.block = DEFS_BLOCK_UNIT, .key = "squad", .label = "Squad", .kind = UNIT_VALUE_INTEGER,
-     .offset = offsetof(UnitDef, squad_size), .speed = 0.1f, .min = 1.0f, .max = BATTLE_MAX_SQUAD_SIZE},
+     .offset = offsetof(UnitDef, squad_size), .speed = 0.1f, .min = 1.0f, .max = BATTLE_MAX_SQUAD_SIZE, .battle_only = true},
     {.block = DEFS_BLOCK_UNIT, .key = "footprint", .label = "Footprint (cells)", .kind = UNIT_VALUE_INTEGER,
-     .offset = offsetof(UnitDef, footprint), .speed = 0.05f, .min = 1.0f, .max = BATTLE_MAX_FOOTPRINT},
+     .offset = offsetof(UnitDef, footprint), .speed = 0.05f, .min = 1.0f, .max = BATTLE_MAX_FOOTPRINT, .battle_only = true},
     {.block = DEFS_BLOCK_UNIT, .key = "health", .label = "Health", .kind = UNIT_VALUE_NUMBER,
      .offset = offsetof(UnitDef, health), .speed = 1.0f, .min = 1.0f, .max = 100000.0f},
     {.block = DEFS_BLOCK_UNIT, .key = "armor", .label = "Armor", .kind = UNIT_VALUE_NUMBER,
@@ -343,8 +343,18 @@ internal void unit_section(Game* game)
     const UnitDef* def = &game->defs.units[game->lab_settings.unit_def];
     igBeginDisabled(!game_rules_editable(game));
     igPushItemWidth(igGetFontSize() * 8.0f);
-    for (u32 i = 0; i < NV_ARRAY_COUNT(unit_value_keys); ++i) {
+    // What the run reads first, then what only a battle does (the squad and what it costs), under its heading.
+    b32 heading_shown = false;
+    for (u32 n = 0; n < 2 * NV_ARRAY_COUNT(unit_value_keys); ++n) {
+        u32 i = n % NV_ARRAY_COUNT(unit_value_keys);
+        b32 battle_pass = n >= NV_ARRAY_COUNT(unit_value_keys);
         const UnitValueKey* key = &unit_value_keys[i];
+        if (key->battle_only != battle_pass)
+            continue;
+        if (battle_pass && !heading_shown) {
+            igSeparatorText(T("Battle only"));
+            heading_shown = true;
+        }
         if (key->block == DEFS_BLOCK_ABILITY && def->ability.kind != ABILITY_SHIELD)
             continue;
         if (key->block == DEFS_BLOCK_UNIT && def->layer != UNIT_LAYER_AIR && key->offset == offsetof(UnitDef, altitude))
@@ -481,7 +491,7 @@ void lab_view_panel(Game* game)
 {
     Lab* lab = &game->lab;
     u32 chosen = game->lab_settings.unit_def;
-    if (view_unit_buttons(game, &chosen, true))
+    if (view_unit_buttons(game, &chosen, true, false))
         game_lab_choose_unit(game, chosen);
     const UnitDef* def = &game->defs.units[game->lab_settings.unit_def];
     if (def->squad_size > 1)

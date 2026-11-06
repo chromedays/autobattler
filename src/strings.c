@@ -121,6 +121,7 @@ global const NvStringPair entries[] = {
     {"Height %.2f m", "높이 %.2f m"},
     {"Width %.2f m", "폭 %.2f m"},
     {"View", "보기"},
+    {"Battle only", "전투에서만"},
     {"Range", "사거리"},
     {"Stop distance", "정지 거리"},
     {"Distance to target", "대상까지 거리"},
