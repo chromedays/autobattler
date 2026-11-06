@@ -58,7 +58,8 @@ python3 -m http.server -d build 8000   # then open http://localhost:8000/
 ```
 
 `just web [Release|Debug]` builds the web game into `build-release` or `build-debug` (configuring that folder with `emcmake` the first
-time), and `just serve [Release|Debug] [port]` builds it and serves it at `http://localhost:8000/` (by default).
+time), and `just serve [Release|Debug] [port]` builds it and serves it at `http://127.0.0.1:8000/` (by default; bound to this computer only,
+since WebGPU needs a secure context and plain HTTP is one only on localhost and 127.0.0.1).
 
 The engine's build downloads its shader tools once (`engine/cmake/shaders.cmake`, into `NV_TOOLS_DIR`); see `engine/AGENTS.md`.
 

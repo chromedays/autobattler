@@ -47,6 +47,8 @@ web config="Release":
     {{ if path_exists(justfile_directory() / ("build-" + lowercase(config)) / "CMakeCache.txt") == "true" { "cmake -E true" } else { "emcmake cmake -S . -B build-" + lowercase(config) + " -G Ninja -DCMAKE_BUILD_TYPE=" + config } }}
     cmake --build build-{{lowercase(config)}}
 
-# Build the web game, then serve it at http://localhost:<port>/ (Ctrl+C stops it).
+# Only on this computer: WebGPU needs a secure context, which plain HTTP is only on localhost and 127.0.0.1, so another
+# device could not run the page anyway (and 0.0.0.0, Python's default, prints a link Chrome refuses WebGPU on).
+# Build the web game, then serve it at http://127.0.0.1:<port>/ (Ctrl+C stops it).
 serve config="Release" port="8000": (web config)
-    python3 -m http.server -d build-{{lowercase(config)}} {{port}}
+    python3 -m http.server --bind 127.0.0.1 -d build-{{lowercase(config)}} {{port}}
