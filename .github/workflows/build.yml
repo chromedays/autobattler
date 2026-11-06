@@ -45,8 +45,8 @@ jobs:
       - name: Install Ninja
         run: sudo apt-get install -y ninja-build
 
-      # Both builds are packaged: Release, and Debug with NV_ASSERT on. The publish jobs put them on the build dashboard
-      # (docs/specs/build_dashboard.md).
+      # Both builds are built, tested and packaged: Release, and Debug with NV_ASSERT on. The publish jobs put only the
+      # Release build on the build dashboard (docs/specs/build_dashboard.md), which opens it as the game and as the editor.
       - name: Configure
         run: |
           emcmake cmake -S . -B build-release -G Ninja -DCMAKE_BUILD_TYPE=Release -DNV_TOOLS_DIR=$PWD/.shader-tools
@@ -74,8 +74,8 @@ jobs:
           path: dist/autobattler-web
           if-no-files-found: error
 
-  # The build dashboard (docs/specs/build_dashboard.md): the auto-battler's Release and Debug builds of the default branch and
-  # of every branch with an open pull request go to Cloudflare R2, which the dashboard's Worker serves. It runs only for pushes
+  # The build dashboard (docs/specs/build_dashboard.md): the auto-battler's Release build of the default branch and of every
+  # branch with an open pull request goes to Cloudflare R2, which the dashboard's Worker serves. It runs only for pushes
   # to this repository and for runs started by hand (Run workflow), so code from a fork never runs with the secrets; until they
   # are set (tools/dashboard/README.md) it publishes nothing. A re-run replays its push as it was, default branch included, so a
   # branch's build is published again with Run workflow, not Re-run.

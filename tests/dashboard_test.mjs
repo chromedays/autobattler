@@ -12,7 +12,7 @@ const push = (ref, after, message = 'A commit\n\nWith a body') => ({ ref: `refs/
 const run = (branch, head, conclusion, status = 'completed') =>
   ({ path: '.github/workflows/build.yml', event: 'push', head_branch: branch, head_sha: head, status, conclusion, head_commit: { message: 'From the run', timestamp: '2026-10-28T08:00:00Z' } });
 const record = (branch, s, extra = {}) =>
-  ({ branch, sha: s, subject: 'Built', date: '2026-10-28T09:30:00Z', release: 4000000, debug: 7000000, stored: 20000000, ahead: 2, ...extra });
+  ({ branch, sha: s, subject: 'Built', date: '2026-10-28T09:30:00Z', release: 4000000, stored: 6000000, ahead: 2, ...extra });
 
 let failures = 0;
 function test(name, body) {
@@ -65,8 +65,10 @@ test('a build record sets the build; a newer push keeps it until its own', () =>
   const s = emptyState();
   applyWebhook(s, 'pull_request', { action: 'opened', repository: repo, pull_request: pull(14, 'x', 'open') }, opts);
   applyWebhook(s, 'push', push('x', sha('b')), opts);
-  applyBuild(s, record('x', sha('b')));
+  applyBuild(s, record('x', sha('b'), { debug: 7000000 }));
   assert.equal(s.branches.x.build.sha, sha('b'));
+  assert.equal(s.branches.x.build.release, 4000000);
+  assert.equal('debug' in s.branches.x.build, false, 'no Debug build, even from an old record');
   assert.equal(s.branches.x.ci, 'passed', 'the upload is the last step of a passing run');
   applyWebhook(s, 'push', push('x', sha('c')), opts);
   assert.equal(s.branches.x.build.sha, sha('b'));

@@ -138,9 +138,11 @@ Follow `engine/AGENTS.md` ("Conventions") and `engine/docs/CODING_STANDARD.md`. 
 - The executable packs only what it reads into `autobattler.data` (`nv_setup_executable(... PRELOAD ...)` in `CMakeLists.txt`): the
   engine's font folder at `/assets/fonts` and `data/` at `/data`. CI installs both builds into the `autobattler-web` artifact
   (`release/`, `debug/`). Debug builds keep their DWARF in `autobattler.debug.wasm`, which only browser developer tools download.
-- The build dashboard (`tools/dashboard/`, `docs/specs/build_dashboard.md`) shows the Release and Debug builds of master and of every
-  branch with an open pull request, from R2, and updates open pages live from GitHub's webhooks. CI's `publish` and `publish-opened`
-  jobs upload them (`tools/dashboard/publish.sh`); they skip with a notice while the secrets are unset. No secret is written in the
+- The build dashboard (`tools/dashboard/`, `docs/specs/build_dashboard.md`) shows the Release build of master and of every branch
+  with an open pull request, from R2, each opened two ways: Game (the page as it is, from the main menu; `docs/specs/main_menu.md`)
+  and Editor (`?editor`: straight into the battle and its panel). The Debug build is built and tested by CI but not published. It
+  updates open pages live from GitHub's webhooks. CI's `publish` and `publish-opened` jobs upload it
+  (`tools/dashboard/publish.sh`); they skip with a notice while the secrets are unset. No secret is written in the
   repository: tokens live only in GitHub Actions secrets and Worker secrets. Jobs that use secrets run only for this repository's
   pushes and branches, never `pull_request_target`. Its state rules (`tools/dashboard/src/state.mjs`) are plain functions that
   `tests/dashboard_test.mjs` runs; the Worker is tried with `wrangler dev` (`tools/dashboard/README.md`).
