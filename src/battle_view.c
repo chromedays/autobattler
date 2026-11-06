@@ -7,6 +7,7 @@
 
 #include "nv_version.h"
 
+#include <float.h>
 #include <math.h>
 #include <stdio.h>
 #include <string.h>
@@ -608,7 +609,7 @@ internal void rules_section(Game* game)
     b32 lab = game->mode == GAME_MODE_LAB;
     char header[64];
     snprintf(header, sizeof(header), "%s###%s", T("Rules"), lab ? "lab_rules" : "Rules");
-    if (!game->project_size || !igCollapsingHeader_TreeNodeFlags(header, lab ? 0 : ImGuiTreeNodeFlags_DefaultOpen))
+    if (!game->project_size || !igCollapsingHeader_TreeNodeFlags(header, 0))
         return;
     igBeginDisabled(!game_rules_editable(game));
     igPushItemWidth(igGetFontSize() * 8.0f);
@@ -726,21 +727,119 @@ b32 view_unit_buttons(Game* game, u32* selected, b32 enabled, b32 deployment)
     return pressed;
 }
 
-// The game clock's speed (the rules run the same ticks at any speed, only more or fewer a frame), and one tick back or
-// forward, paused; holding a step button runs through the ticks.
-void view_time_controls(Game* game, b32 can_step_back, b32 can_step_forward)
+// Keeps the playback bar's next button, `width` wide, on this row when it fits; otherwise it starts the next row (counted).
+internal void bar_same_line(f32 width, u32* rows)
 {
-    b32 paused = game->paused;
-    if (paused)
-        igPushStyleColor_Vec4(ImGuiCol_Button, igGetStyle()->Colors[ImGuiCol_ButtonActive]);
-    if (igButton(TL("Pause"), (ImVec2_c){0, 0}))
+    igSameLine(0.0f, -1.0f);
+    if (igGetContentRegionAvail().x < width) {
+        igNewLine();
+        ++*rows;
+    }
+}
+
+internal f32 button_width(const char* label)
+{
+    return igCalcTextSize(label, NULL, true, -1.0f).x + igGetStyle()->FramePadding.x * 2.0f;
+}
+
+// The playback bar (docs/specs/battle.md, "Playback bar"), under the viewport as in a video player. Its top row is the timeline:
+// the round (the lab's run as far as it has gone) with the time written in it; dragging it asks the frame for that tick
+// (game->seek_tick) and holds the game clock. Its bottom row is the round's buttons (Start and Retry; the lab's Restart), Pause or
+// Play, a tick back or forward (paused; held, they run through the ticks) and the game clock's speeds (the rules run the same ticks
+// at any speed, only more or fewer a frame). A button that does not fit goes on to the next row; the rows are counted for the
+// bar's height in the next frame's layout.
+void view_bar(Game* game)
+{
+    Battle* battle = game_shown_battle(game);
+    b32 lab = game->mode == GAME_MODE_LAB;
+    game->scrubbing = false;
+    if (!nv_imgui_begin_panel_ex(&game->imgui, "Playback", game->layout.bar,
+                                 ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse)) {
+        igEnd();
+        return;
+    }
+    igBeginDisabled(!game->defs_ok);
+
+    // The timeline. The seconds are the tick count over the tick rate, so they slow down with the game on a slow device.
+    char text[96] = "";
+    s32 first = 0, last = 0, value = (s32)battle->tick;
+    b32 can_seek = false;
+    if (game->defs_ok && lab) {
+        const Lab* run = &game->lab;
+        last = (s32)(run->furthest_tick > battle->tick ? run->furthest_tick : battle->tick);
+        first = run->changes_full ? value : 0; // too many changes to play the run again: forward only
+        can_seek = last > first;
+        snprintf(text, sizeof(text), T("%.1f s (%u ticks)"), (f64)battle->tick * BATTLE_TICK_SECONDS, battle->tick);
+    } else if (game->defs_ok) {
+        u32 round_ticks = battle->defs->rules.round_ticks;
+        last = (s32)round_ticks;
+        can_seek = battle->phase != BATTLE_DEPLOY;
+        snprintf(text, sizeof(text), T("%.1f / %.0f s (%u / %u ticks)"), (f64)battle->tick * BATTLE_TICK_SECONDS,
+                 (f64)round_ticks * BATTLE_TICK_SECONDS, battle->tick, round_ticks);
+    }
+    // NOTE: the text is the slider's format; it holds no '%', since every number in it is already written out.
+    igBeginDisabled(!can_seek);
+    igSetNextItemWidth(-FLT_MIN);
+    if (igSliderInt("##timeline", &value, first, last > first ? last : first + 1, text,
+                    ImGuiSliderFlags_NoInput | ImGuiSliderFlags_AlwaysClamp) && can_seek) {
+        game->seek_wanted = true;
+        game->seek_tick = (u32)value;
+    }
+    game->scrubbing = can_seek && igIsItemActive();
+    igEndDisabled();
+
+    // The round's buttons start the bottom row.
+    u32 rows = 2;
+    if (lab) {
+        if (igButton(TL("Restart"), (ImVec2_c){0, 0}))
+            lab_view_restart(game);
+    } else {
+        b32 can_start = game->defs_ok && battle->phase == BATTLE_DEPLOY && battle_alive_count(battle, TEAM_PLAYER) > 0;
+        igBeginDisabled(!can_start);
+        if (igButton(TL("Start"), (ImVec2_c){0, 0})) {
+            start_over(game);
+            game->paused = false; // a paused clock would make Start look broken
+            battle_start(battle);
+        }
+        igEndDisabled();
+        bar_same_line(button_width(TL("Retry")), &rows);
+        igBeginDisabled(battle->phase == BATTLE_DEPLOY);
+        if (igButton(TL("Retry"), (ImVec2_c){0, 0})) {
+            start_over(game);
+            battle_retry(battle);
+        }
+        igEndDisabled();
+    }
+
+    // Pause and Play are one button, as wide as the wider of the two so that the buttons after it stay where they are.
+    char play[64];
+    snprintf(play, sizeof(play), "%s###play", game->paused ? T("Play") : T("Pause"));
+    f32 play_width = fmaxf(button_width(T("Play")), button_width(T("Pause")));
+    bar_same_line(play_width, &rows);
+    if (igButton(play, (ImVec2_c){play_width, 0}))
         game->paused = !game->paused;
-    if (paused)
-        igPopStyleColor(1);
+
+    b32 fighting = battle->phase == BATTLE_FIGHT;
+    b32 can_step_back = lab ? battle->tick > 0 && !game->lab.changes_full : battle->phase != BATTLE_DEPLOY && battle->tick > 0;
+    bar_same_line(button_width(TL("< Tick")), &rows);
+    igBeginDisabled(!can_step_back);
+    if (step_button(TL("< Tick"))) {
+        game->step = -1;
+        game->paused = true;
+    }
+    igEndDisabled();
+    bar_same_line(button_width(TL("Tick >")), &rows);
+    igBeginDisabled(!fighting);
+    if (step_button(TL("Tick >"))) {
+        game->step = 1;
+        game->paused = true;
+    }
+    igEndDisabled();
+
     const f32 speeds[4] = {0.5f, 1.0f, 2.0f, 4.0f};
     const char* speed_labels[4] = {"0.5x###speed0", "1x###speed1", "2x###speed2", "4x###speed3"};
     for (u32 i = 0; i < NV_ARRAY_COUNT(speeds); ++i) {
-        igSameLine(0.0f, -1.0f);
+        bar_same_line(button_width(speed_labels[i]), &rows);
         b32 lit = !game->paused && game->speed == speeds[i];
         if (lit)
             igPushStyleColor_Vec4(ImGuiCol_Button, igGetStyle()->Colors[ImGuiCol_ButtonActive]);
@@ -751,20 +850,9 @@ void view_time_controls(Game* game, b32 can_step_back, b32 can_step_forward)
         if (lit)
             igPopStyleColor(1);
     }
-
-    igBeginDisabled(!can_step_back);
-    if (step_button(TL("< Tick"))) {
-        game->step = -1;
-        game->paused = true;
-    }
     igEndDisabled();
-    igSameLine(0.0f, -1.0f);
-    igBeginDisabled(!can_step_forward);
-    if (step_button(TL("Tick >"))) {
-        game->step = 1;
-        game->paused = true;
-    }
-    igEndDisabled();
+    game->bar_rows = rows;
+    igEnd();
 }
 
 // Battle or Unit Lab, the chosen one lit. The lab opens only from deployment.
@@ -792,6 +880,79 @@ internal void mode_buttons(Game* game)
     }
 }
 
+// The battle's own part of the panel: the units to place, Reset, and how the round stands.
+internal void battle_section(Game* game)
+{
+    Battle* battle = &game->battle;
+    view_unit_buttons(game, &game->selected_def, battle->phase == BATTLE_DEPLOY, true);
+    if (igButton(TL("Reset"), (ImVec2_c){0, 0})) {
+        start_over(game);
+        battle_retry(battle);
+        battle_clear_placement(battle);
+    }
+    igText(T("Supply: %u / %u"), battle_supply_left(battle), battle->defs->supply);
+    igText(T("Player: %u alive"), battle_alive_count(battle, TEAM_PLAYER));
+    igText(T("Enemy: %u alive"), battle_alive_count(battle, TEAM_ENEMY));
+    if (battle->phase == BATTLE_RESULT) {
+        const char* outcomes[4] = {"", T("Victory"), T("Defeat"), T("Draw")};
+        igPushStyleColor_Vec4(ImGuiCol_Text, battle->outcome == OUTCOME_PLAYER ? (ImVec4_c){0.4f, 1.0f, 0.5f, 1.0f}
+                                             : battle->outcome == OUTCOME_ENEMY ? (ImVec4_c){1.0f, 0.4f, 0.35f, 1.0f}
+                                                                                : (ImVec4_c){1.0f, 0.9f, 0.4f, 1.0f});
+        igText("%s", outcomes[battle->outcome]);
+        igPopStyleColor(1);
+        igText(T("Value left: %.0f against %.0f"), battle_remaining_value(battle, TEAM_PLAYER), battle_remaining_value(battle, TEAM_ENEMY));
+    }
+}
+
+// The project: where the rules, units and stage came from, and opening and saving it as a file on this computer
+// (docs/specs/abproj.md, "Loading and saving"). Save writes the text it was read from, comments and all.
+internal void project_section(Game* game)
+{
+    if (game->project_edited)
+        igTextWrapped(T("Project: %s (changed)"), game->project_name);
+    else
+        igTextWrapped(T("Project: %s"), game->project_name);
+    const char* labels[4] = {TL("Open..."), TL("Reload"), TL("Save"), TL("Save as...")};
+    for (u32 i = 0; i < NV_ARRAY_COUNT(labels); ++i) {
+        if (i)
+            same_line_if_fits(labels[i]);
+        igBeginDisabled(!game_project_action_allowed(game, (ProjectAction)i));
+        if (igButton(labels[i], (ImVec2_c){0, 0}))
+            game_project_action(game, (ProjectAction)i);
+        igEndDisabled();
+    }
+    if (game->project_message[0]) {
+        if (game->project_message_bad)
+            igPushStyleColor_Vec4(ImGuiCol_Text, (ImVec4_c){1.0f, 0.4f, 0.35f, 1.0f});
+        igTextWrapped("%s", game->project_message);
+        if (game->project_message_bad)
+            igPopStyleColor(1);
+    }
+}
+
+// The language and the UI's scale, which are set once and left.
+internal void settings_section(Game* game)
+{
+    const char* languages[NV_LANGUAGE_COUNT] = {"English", "한국어"};
+    s32 language = (s32)nv_strings_language();
+    igSetNextItemWidth(igGetFontSize() * 8.0f);
+    if (igCombo_Str_arr(TL("Language"), &language, languages, NV_LANGUAGE_COUNT, -1))
+        nv_strings_set_language((NvLanguage)language);
+    // The UI's scale on top of the engine's; taken at the next frame's start (main.c).
+    const f32 zooms[UI_ZOOM_CHOICES] = {1.0f, 1.25f, 1.5f, 1.75f, 2.0f, 2.5f};
+    const char* zoom_names[UI_ZOOM_CHOICES] = {"100%", "125%", "150%", "175%", "200%", "250%"};
+    s32 zoom = 0;
+    for (u32 i = 0; i < UI_ZOOM_CHOICES; ++i)
+        if (fabsf(zooms[i] - game->ui_zoom) < 0.01f)
+            zoom = (s32)i;
+    igSetNextItemWidth(igGetFontSize() * 8.0f);
+    if (igCombo_Str_arr(TL("UI scale"), &zoom, zoom_names, UI_ZOOM_CHOICES, -1))
+        game->ui_zoom_wanted = zooms[zoom];
+}
+
+// The Battle panel (docs/specs/battle.md, "Battle panel"): what is used often on top (the mode, the units, how the round
+// stands; the lab's sections), the settings used now and then below (the project, its rules, the language and scale). The
+// round's own controls are on the playback bar.
 void view_panel(Game* game)
 {
     Battle* battle = &game->battle;
@@ -803,110 +964,30 @@ void view_panel(Game* game)
             igSameLine(0.0f, -1.0f);
             igTextDisabled("%s", phases[battle->phase]);
         }
-
-        const char* languages[NV_LANGUAGE_COUNT] = {"English", "한국어"};
-        s32 language = (s32)nv_strings_language();
-        igSetNextItemWidth(igGetFontSize() * 8.0f);
-        if (igCombo_Str_arr(TL("Language"), &language, languages, NV_LANGUAGE_COUNT, -1))
-            nv_strings_set_language((NvLanguage)language);
-        // The UI's scale on top of the engine's; taken at the next frame's start (main.c).
-        const f32 zooms[UI_ZOOM_CHOICES] = {1.0f, 1.25f, 1.5f, 1.75f, 2.0f, 2.5f};
-        const char* zoom_names[UI_ZOOM_CHOICES] = {"100%", "125%", "150%", "175%", "200%", "250%"};
-        s32 zoom = 0;
-        for (u32 i = 0; i < UI_ZOOM_CHOICES; ++i)
-            if (fabsf(zooms[i] - game->ui_zoom) < 0.01f)
-                zoom = (s32)i;
-        igSetNextItemWidth(igGetFontSize() * 8.0f);
-        if (igCombo_Str_arr(TL("UI scale"), &zoom, zoom_names, UI_ZOOM_CHOICES, -1))
-            game->ui_zoom_wanted = zooms[zoom];
         mode_buttons(game);
 
-        // The project: where the rules, units and stage came from, and opening and saving it as a file on this computer
-        // (docs/specs/abproj.md, "Loading and saving"). Save writes the text it was read from, comments and all.
         igSeparator();
-        if (game->project_edited)
-            igTextWrapped(T("Project: %s (changed)"), game->project_name);
-        else
-            igTextWrapped(T("Project: %s"), game->project_name);
-        const char* labels[4] = {TL("Open..."), TL("Reload"), TL("Save"), TL("Save as...")};
-        for (u32 i = 0; i < NV_ARRAY_COUNT(labels); ++i) {
-            if (i)
-                igSameLine(0.0f, -1.0f);
-            igBeginDisabled(!game_project_action_allowed(game, (ProjectAction)i));
-            if (igButton(labels[i], (ImVec2_c){0, 0}))
-                game_project_action(game, (ProjectAction)i);
-            igEndDisabled();
-        }
-        if (game->project_message[0]) {
-            if (game->project_message_bad)
-                igPushStyleColor_Vec4(ImGuiCol_Text, (ImVec4_c){1.0f, 0.4f, 0.35f, 1.0f});
-            igTextWrapped("%s", game->project_message);
-            if (game->project_message_bad)
-                igPopStyleColor(1);
-        }
-        rules_section(game);
-
         if (!game->defs_ok) {
             igPushStyleColor_Vec4(ImGuiCol_Text, (ImVec4_c){1.0f, 0.4f, 0.35f, 1.0f});
             igTextWrapped("%s", T("Definitions could not be loaded"));
             igPopStyleColor(1);
             igTextWrapped("%s", game->defs.first_error); // the file's own text, so English
-            igEnd();
-            return;
-        }
-
-        igSeparator();
-        if (lab) {
+        } else if (lab) {
             lab_view_panel(game);
-            igEnd();
-            return;
+        } else {
+            battle_section(game);
         }
-        view_unit_buttons(game, &game->selected_def, battle->phase == BATTLE_DEPLOY, true);
-
-        b32 can_start = battle->phase == BATTLE_DEPLOY && battle_alive_count(battle, TEAM_PLAYER) > 0;
-        igBeginDisabled(!can_start);
-        if (igButton(TL("Start"), (ImVec2_c){0, 0})) {
-            start_over(game);
-            game->paused = false; // a paused clock would make Start look broken
-            battle_start(battle);
-        }
-        igEndDisabled();
-        igSameLine(0.0f, -1.0f);
-        igBeginDisabled(battle->phase == BATTLE_DEPLOY);
-        if (igButton(TL("Retry"), (ImVec2_c){0, 0})) {
-            start_over(game);
-            battle_retry(battle);
-        }
-        igEndDisabled();
-        igSameLine(0.0f, -1.0f);
-        if (igButton(TL("Reset"), (ImVec2_c){0, 0})) {
-            start_over(game);
-            battle_retry(battle);
-            battle_clear_placement(battle);
-        }
-
-        view_time_controls(game, battle->phase != BATTLE_DEPLOY && battle->tick > 0, battle->phase == BATTLE_FIGHT);
 
         igSeparator();
-        igText(T("Supply: %u / %u"), battle_supply_left(battle), battle->defs->supply);
-        igText(T("Player: %u alive"), battle_alive_count(battle, TEAM_PLAYER));
-        igText(T("Enemy: %u alive"), battle_alive_count(battle, TEAM_ENEMY));
-        // The rules count ticks; the seconds are that count over the tick rate, so they slow down with the game on a slow device.
-        u32 round_ticks = battle->defs->rules.round_ticks;
-        igText(T("Time: %.1f / %.0f s (%u / %u ticks)"), (f32)battle->tick * BATTLE_TICK_SECONDS,
-               (f32)round_ticks * BATTLE_TICK_SECONDS, battle->tick, round_ticks);
-
-        if (battle->phase == BATTLE_RESULT) {
-            const char* outcomes[4] = {"", T("Victory"), T("Defeat"), T("Draw")};
-            igPushStyleColor_Vec4(ImGuiCol_Text, battle->outcome == OUTCOME_PLAYER ? (ImVec4_c){0.4f, 1.0f, 0.5f, 1.0f}
-                                                 : battle->outcome == OUTCOME_ENEMY ? (ImVec4_c){1.0f, 0.4f, 0.35f, 1.0f}
-                                                                                    : (ImVec4_c){1.0f, 0.9f, 0.4f, 1.0f});
-            igText("%s", outcomes[battle->outcome]);
-            igPopStyleColor(1);
-            igText(T("Value left: %.0f against %.0f"), battle_remaining_value(battle, TEAM_PLAYER), battle_remaining_value(battle, TEAM_ENEMY));
-        }
+        project_section(game);
+        rules_section(game);
         igSeparator();
-        igTextWrapped("%s", T("Tap your zone (blue) to place a squad of the chosen unit; tap a placed squad to remove it. Drag to move the view, drag with the right button or two fingers to turn it, and use the wheel or pinch to zoom."));
+        settings_section(game);
+        igSeparator();
+        if (lab)
+            igTextWrapped("%s", T("The unit fights two targets, one on the ground and one in the air, by the battle's rules. A change goes into the run as it goes; with Restart on change it starts the run over. Drag to move the view, drag with the right button or two fingers to turn it, and use the wheel or pinch to zoom."));
+        else
+            igTextWrapped("%s", T("Tap your zone (blue) to place a squad of the chosen unit; tap a placed squad to remove it. Drag to move the view, drag with the right button or two fingers to turn it, and use the wheel or pinch to zoom."));
     }
     igEnd();
 }

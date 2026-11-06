@@ -251,10 +251,13 @@ void battle_seek(Battle* battle, u32 tick)
 {
     if (battle->phase == BATTLE_DEPLOY)
         return;
-    battle_retry(battle);
-    b32 started = battle_start(battle);
-    NV_ASSERT(started); // a round that was started has player units to start with
-    (void)started;
+    // Forward runs on from here: the rules are deterministic, so that is the state a replay would reach.
+    if (tick < battle->tick) {
+        battle_retry(battle);
+        b32 started = battle_start(battle);
+        NV_ASSERT(started); // a round that was started has player units to start with
+        (void)started;
+    }
     while (battle->tick < tick && battle->phase == BATTLE_FIGHT) {
         battle_tick(battle);
         battle->event_count = 0;

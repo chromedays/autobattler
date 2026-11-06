@@ -123,6 +123,7 @@ void lab_start(Lab* lab, const BattleDefs* project, const LabSettings* settings)
     lab->defs.seed = project->seed;
     lab->change_count = 0;
     lab->changes_full = false;
+    lab->furthest_tick = 0;
     play_from_start(lab);
 }
 
@@ -165,7 +166,9 @@ internal void apply_change(Lab* lab, const LabChange* change)
 // Puts a change into the run at this tick. A change after a step back drops the recorded ones it would come before.
 internal void record_change(Lab* lab, const LabChange* change)
 {
+    // The changes after this tick are dropped, so the run beyond it is no longer the one it was.
     lab->change_count = lab->changes_applied;
+    lab->furthest_tick = lab->battle.tick;
     if (lab->change_count < LAB_MAX_CHANGES) {
         lab->changes[lab->change_count++] = *change;
         lab->changes_applied = lab->change_count;
@@ -285,13 +288,18 @@ void lab_tick(Lab* lab)
     for (u32 i = 0; i < LAB_TARGET_COUNT; ++i)
         if ((battle->units[LAB_SLOT_GROUND + i].flags & UNIT_DEAD) && battle->tick - lab->death_ticks[i] >= respawn_ticks)
             bring_back_target(lab, i);
+    if (battle->tick > lab->furthest_tick)
+        lab->furthest_tick = battle->tick;
 }
 
 b32 lab_seek(Lab* lab, u32 tick)
 {
-    if (lab->changes_full)
-        return false;
-    play_from_start(lab);
+    // Forward runs on from here, which needs no record; back plays the run again from its start.
+    if (tick < lab->battle.tick) {
+        if (lab->changes_full)
+            return false;
+        play_from_start(lab);
+    }
     while (lab->battle.tick < tick) {
         lab_tick(lab);
         lab->battle.event_count = 0;

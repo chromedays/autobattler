@@ -163,13 +163,17 @@ Reset results 버튼은 측정값만 지운다(실험은 그대로 이어진다)
 
 ### 시간
 
-전투와 같은 게임 시각(`battle.md`의 "시간 조작")이다: Pause, 0.5x, 1x, 2x, 4x, `< Tick`, `Tick >`. 실험은 끝이 없으므로 `Tick >`은
-언제나 켜져 있다.
+전투와 같은 게임 시각과 재생 막대(`battle.md`의 "재생 막대", "시간 조작")다: Restart, Pause/Play, `< Tick`, `Tick >`, 0.5x, 1x, 2x, 4x.
+실험은 끝이 없으므로 `Tick >`은 언제나 켜져 있다.
+
+- 타임라인은 0부터 실험이 가 본 가장 먼 틱(`Lab.furthest_tick`)까지다. 앞으로 끌면 지금 상태에서 그 틱까지 돌리고(기록이 차도 된다),
+  뒤로 끌면 `lab_seek`가 처음부터 다시 돌린다(기록이 차면 뒤로는 가지 않는다). 되감은 뒤에 바꾸면 그 뒤의 기록과 함께 가장 먼 틱도
+  지금 틱으로 돌아온다.
 
 - `< Tick`은 `lab_seek(lab, tick)`: 실험의 처음 정의와 설정으로 처음부터 그 틱까지 다시 돌리고, 기록된 바꾸기를 그 틱마다 다시 건다
   ("바꾸기와 다시 시작" 절). 다시 돌린 상태와 측정값은 그때와 같다(해시가 같다). 비용은 틱 수에 비례한다(유닛 셋이라 10분 실험도 작다).
   되감기는 기록을 지우지 않는다. 되감은 뒤에 바꾸면 그 틱 뒤의 기록을 버리고 새 바꾸기를 남긴다.
-- 패널에 실험 시간(초와 틱)을 보인다.
+- 실험 시간(초와 틱)은 타임라인 안에 쓴다.
 
 ### 그리기
 
@@ -200,12 +204,13 @@ Range(사거리 원과 그 치수), Stop distance(정지 거리 원과 그 치�
 
 ### 패널
 
-실험실 모드에서 위에서 아래로: 단계 대신 "Unit Lab", 언어 콤보, UI scale 콤보(`battle.md`의 "실행 파일"), 모드 버튼, 프로젝트 줄(Open..., Reload, Save, Save as...), Rules
-절(접힌 채 시작; 실험실에서 싸움을 바꾸는 넷만: Gravity, Retarget interval, Stop fraction, Min. damage fraction. 구역이 없고 라운드가
-끝나지 않으며 전장 크기는 표적 거리의 한계일 뿐이라, Cell size, Grid, Zone rows, Round time은 보이지 않는다), 유닛 고르기(이름만의 버튼과
-레이어 줄; 분대 수와 비용은 배치의 정보라 버튼에 쓰지 않는다; 역할 필터는 전투와 같이 쓴다), 분대 줄("A squad of 6: the lab tries one of
-them."), Restart 버튼과 Restart on change 체크, 시간 버튼, 실험 시간, Lab 절(실험 조건, 펼침), View 절(그리는 것의 체크, 펼침), Unit 절(유닛 값
-고치기, 접힘), Results 절(측정값, 빗나감, 기대값, 바꾼 횟수, Reset results; 펼침), 짧은 도움말. 패널은 길어서 세로로 스크롤한다. 모든 글자는
+실험실 모드에서 위에서 아래로(전투처럼 자주 쓰는 것이 위; `battle.md`의 "Battle 패널"): 단계 대신 "Unit Lab", 모드 버튼, 유닛
+고르기(이름만의 버튼과 레이어 줄; 분대 수와 비용은 배치의 정보라 버튼에 쓰지 않는다; 역할 필터는 전투와 같이 쓴다), 분대 줄("A squad of
+6: the lab tries one of them."), Restart on change 체크, Lab 절(실험 조건, 펼침), View 절(그리는 것의 체크, 펼침), Unit 절(유닛 값 고치기,
+접힘), Results 절(측정값, 빗나감, 기대값, 바꾼 횟수, Reset results; 펼침), 프로젝트 줄(Open..., Reload, Save, Save as...), Rules 절(접힌 채
+시작; 실험실에서 싸움을 바꾸는 넷만: Gravity, Retarget interval, Stop fraction, Min. damage fraction. 구역이 없고 라운드가 끝나지 않으며
+전장 크기는 표적 거리의 한계일 뿐이라, Cell size, Grid, Zone rows, Round time은 보이지 않는다), 언어 콤보, UI scale 콤보(`battle.md`의
+"실행 파일"), 짧은 도움말. Restart, 시간 버튼과 실험 시간은 재생 막대에 있다("시간" 절). 패널은 길어서 세로로 스크롤한다. 모든 글자는
 `T()`/`TL()`을 거치고 한국어 행을 `src/strings.c`에 더한다. Unit 절의 이름표는 키 표(`lab_view.c`의 `unit_value_keys`, `.label =`)에 있고
 보일 때 `T()`를 거친다.
 

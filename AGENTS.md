@@ -106,14 +106,15 @@ Follow `engine/AGENTS.md` ("Conventions") and `engine/docs/CODING_STANDARD.md`. 
   (abproj.md, "Versions"). A unit def is placed as a squad (`squad` units on `footprint` cells a side; battle.md, "Squads"), by its
   footprint's corner nearest the grid's origin; a rule is read from `defs->rules`, never from a macro, and tests try the format only
   with text of their own, never with the file's values.
-- Its viewport and its panel must not overlap (input that starts in the viewport skips ImGui). The UI's size is the engine's
+- Its viewport, its panel and its playback bar (under the viewport: the timeline, Start and Retry or the lab's Restart, Pause,
+  the ticks and speeds; battle.md, "Playback bar") must not overlap (input that starts in the viewport skips ImGui). The UI's size is the engine's
   `ui_scale` times the game's `Game.ui_zoom` (the panel's UI scale combo; 200% on a desktop to start, not saved; battle.md,
   "Executable"). The engine's `ui_scale` also tells a finger from a mouse, so the game never changes it and asks `game->touch`
   instead; pixel sizes the game draws itself (the lab's dimensions, the panel's width) go through `game_ui_scale`. UI text goes through `T()`/`TL()` with
   rows in `src/strings.c` (`engine/docs/specs/korean.md`); ctest's `strings_test` (the engine's `tests/strings_test.mjs`, run on `src/`)
   fails on a missing row.
 - Debug builds export `Module._battle_debug(n)`, `_battle_debug_deploy`, `_battle_debug_start`, `_battle_debug_run`,
-  `_battle_debug_set_speed`, `_battle_debug_step`, `_battle_debug_layout`, `_battle_debug_project`, `_battle_debug_load`,
+  `_battle_debug_set_speed`, `_battle_debug_step`, `_battle_debug_seek`, `_battle_debug_layout`, `_battle_debug_project`, `_battle_debug_load`,
   `_battle_debug_project_action`, `_battle_debug_project_message`, `_battle_debug_set_rule`, `_battle_debug_project_text`,
   `_battle_debug_unit_roles`, `_battle_debug_set_role_filter`, `_battle_debug_load_test`, and for the unit lab `_battle_debug_lab(n)`,
   `_battle_debug_lab_enter`, `_battle_debug_lab_set`, `_battle_debug_lab_action`, `_battle_debug_lab_run` and

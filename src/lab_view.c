@@ -501,26 +501,23 @@ void lab_view_panel(Game* game)
     if (def->squad_size > 1)
         igTextWrapped(T("A squad of %u: the lab tries one of them."), def->squad_size);
 
-    if (igButton(TL("Restart"), (ImVec2_c){0, 0})) {
-        lab_start(lab, &game->defs, &game->lab_settings);
-        nv_vfx_clear(&game->vfx);
-        game->accumulator = 0.0f;
-    }
-    igSameLine(0.0f, -1.0f);
     if (lab_checkbox(TL("Restart on change"), &game->lab_settings.restart_on_change))
         game_lab_settings_changed(game);
-    view_time_controls(game, lab->battle.tick > 0 && !lab->changes_full, true);
     if (lab->changes_full) {
         igPushStyleColor_Vec4(ImGuiCol_Text, igGetStyle()->Colors[ImGuiCol_TextDisabled]);
         igTextWrapped("%s", T("Too many changes to step back; Restart to step back again."));
         igPopStyleColor(1);
     }
-    igText(T("Time: %.1f s (%u ticks)"), (f32)lab->battle.tick * BATTLE_TICK_SECONDS, lab->battle.tick);
 
     conditions_section(game);
     view_section(game);
     unit_section(game);
     results_section(game);
-    igSeparator();
-    igTextWrapped("%s", T("The unit fights two targets, one on the ground and one in the air, by the battle's rules. A change goes into the run as it goes; with Restart on change it starts the run over. Drag to move the view, drag with the right button or two fingers to turn it, and use the wheel or pinch to zoom."));
+}
+
+void lab_view_restart(Game* game)
+{
+    lab_start(&game->lab, &game->defs, &game->lab_settings);
+    nv_vfx_clear(&game->vfx);
+    game->accumulator = 0.0f;
 }
