@@ -845,12 +845,12 @@ internal u32 format_value(char* out, umm capacity, f64 value, b32 integer)
     return (u32)length;
 }
 
-umm defs_rule_set(const char* text, umm size, const char* key, const f64* values, u32 count, char* out, umm capacity)
+// Writes the text with the values of `line` (a key line of `field`, ending at `end`) changed to `values`: only the values'
+// text changes, and the spaces after it shrink or grow so that a comment keeps its column (one space at the least).
+internal umm replace_values(const char* text, umm size, const Field* field, const NvTextLine* line, const char* end,
+                            const f64* values, u32 count, char* out, umm capacity)
 {
-    RuleLine rule = find_rule(text, size, key);
-    if (!rule.ok || count != field_values(rule.field))
-        return 0;
-    b32 integer = rule.field->kind == FIELD_INTEGER || rule.field->kind == FIELD_GRID;
+    b32 integer = field->kind == FIELD_INTEGER || field->kind == FIELD_GRID;
     char written[96];
     u32 used = 0;
     for (u32 i = 0; i < count; ++i) {
@@ -862,16 +862,15 @@ umm defs_rule_set(const char* text, umm size, const char* key, const f64* values
         used += length;
     }
 
-    // The values' old text, from the first value to the end of the last, is replaced. The spaces after it shrink or grow
-    // with the change so that a comment keeps its column (one space at the least).
-    const char* first = rule.line.tokens[1].text;
-    const NvTextToken* last = &rule.line.tokens[count];
+    // The values' old text, from the first value to the end of the last, is replaced.
+    const char* first = line->tokens[1].text;
+    const NvTextToken* last = &line->tokens[count];
     const char* after = last->text + last->length;
     const char* rest = after;
-    while (rest < rule.end && *rest == ' ')
+    while (rest < end && *rest == ' ')
         ++rest;
     s64 gap = rest - after;
-    if (rest < rule.end && *rest == '#') {
+    if (rest < end && *rest == '#') {
         gap += (s64)(after - first) - (s64)used;
         if (gap < 1)
             gap = 1;
@@ -885,4 +884,174 @@ umm defs_rule_set(const char* text, umm size, const char* key, const f64* values
     memset(out + head + used, ' ', (umm)gap);
     memmove(out + head + used + (umm)gap, rest, tail);
     return total;
+}
+
+umm defs_rule_set(const char* text, umm size, const char* key, const f64* values, u32 count, char* out, umm capacity)
+{
+    RuleLine rule = find_rule(text, size, key);
+    if (!rule.ok || count != field_values(rule.field))
+        return 0;
+    return replace_values(text, size, rule.field, &rule.line, rule.end, values, count, out, capacity);
+}
+
+// Editing a unit def (docs/specs/unit_lab.md, "Editing the unit's values"), on the text of a project read without errors.
+
+// A key of a unit's block, its weapon's or its ability's: its line when the file gives it, and where a line for it goes when it
+// does not. Fails (zeroed) when the unit, the block or the key is not there.
+typedef struct UnitKeyLine {
+    b32 ok;
+    const Field* field;
+    b32 given; // the key's line is in the file: `line` and `end`
+    NvTextLine line;
+    const char* end;
+    const char* insert_at; // otherwise: a new line goes here (the start of the line after the block's last key)
+    b32 insert_newline_first; // the block's last line ends the text with no line break
+    u32 indent;               // the block's keys' indentation
+    b32 crlf;                 // the text's lines end in "\r\n"
+} UnitKeyLine;
+
+internal UnitKeyLine find_unit_key(const char* text, umm size, const char* unit, u32 block, const char* key)
+{
+    const Field* fields = block == DEFS_BLOCK_WEAPON ? weapon_fields : block == DEFS_BLOCK_ABILITY ? shield_fields : unit_fields;
+    u32 field_count = block == DEFS_BLOCK_WEAPON ? FIELD_COUNT(weapon_fields)
+                      : block == DEFS_BLOCK_ABILITY ? FIELD_COUNT(shield_fields) : FIELD_COUNT(unit_fields);
+    if (block > DEFS_BLOCK_ABILITY)
+        return (UnitKeyLine){0};
+    const Field* field = NULL;
+    for (u32 i = 0; i < field_count; ++i)
+        if (strcmp(fields[i].key, key) == 0)
+            field = &fields[i];
+    if (!field)
+        return (UnitKeyLine){0};
+
+    UnitKeyLine found = {.field = field};
+    NvTextLines lines = {text, size, 0, 0};
+    b32 in_unit = false, in_block = false, past_unit_keys = false;
+    u32 unit_indent = 0;
+    for (NvTextLineRange text_line = nv_text_next_line(&lines); text_line.ok; text_line = nv_text_next_line(&lines)) {
+        NvTextTokenized tokenized = nv_text_tokenize(NULL, text_line.begin, text_line.end, lines.number);
+        const NvTextLine* line = &tokenized.line;
+        if (!tokenized.ok || !line->token_count)
+            continue;
+        if (line->indent == 0) {
+            if (in_unit)
+                break; // the unit's block has ended
+            in_unit = line->token_count == 2 && nv_text_token_is(line->tokens[0], "unit") && nv_text_token_is(line->tokens[1], unit);
+            if (in_unit && block == DEFS_BLOCK_UNIT) {
+                found.ok = true;
+                found.insert_at = text_line.end; // after the header, until a key comes
+            }
+            continue;
+        }
+        if (!in_unit)
+            continue;
+        if (!unit_indent)
+            unit_indent = line->indent;
+        b32 header = line->indent == unit_indent && line->token_count == 2
+                     && (nv_text_token_is(line->tokens[0], "weapon") || nv_text_token_is(line->tokens[0], "ability"));
+        if (line->indent == unit_indent) {
+            in_block = header && (block == DEFS_BLOCK_WEAPON ? nv_text_token_is(line->tokens[0], "weapon")
+                                  : block == DEFS_BLOCK_ABILITY ? nv_text_token_is(line->tokens[0], "ability")
+                                                                    && nv_text_token_is(line->tokens[1], "shield")
+                                                                : false);
+            past_unit_keys = past_unit_keys || header;
+            if (in_block) {
+                found.ok = true;
+                found.insert_at = text_line.end;
+                found.indent = 0;
+                continue;
+            }
+            if (block == DEFS_BLOCK_UNIT && !header) {
+                if (!past_unit_keys) { // a new key goes with the unit's keys, before its weapon and ability
+                    found.insert_at = text_line.end;
+                    found.indent = line->indent;
+                }
+                if (nv_text_token_is(line->tokens[0], key) && line->token_count == 1 + field_values(field)) {
+                    found.given = true;
+                    found.line = *line;
+                    found.end = text_line.end;
+                }
+            }
+            continue;
+        }
+        if (in_block) { // a key of the weapon or the ability
+            found.insert_at = text_line.end;
+            found.indent = line->indent;
+            if (nv_text_token_is(line->tokens[0], key) && line->token_count == 1 + field_values(field)) {
+                found.given = true;
+                found.line = *line;
+                found.end = text_line.end;
+            }
+        }
+    }
+    if (!found.ok)
+        return (UnitKeyLine){0};
+    // insert_at is the end of the block's last line: the new line goes after its line break.
+    const char* stop = text + size;
+    found.crlf = found.insert_at > text && found.insert_at[-1] == '\r';
+    if (found.insert_at < stop)
+        ++found.insert_at; // past the '\n'
+    else
+        found.insert_newline_first = true;
+    if (!found.indent) // a block with no keys yet: one level deeper than its header
+        found.indent = block == DEFS_BLOCK_UNIT ? 4 : unit_indent + 4;
+    return found;
+}
+
+u32 defs_unit_get(const char* text, umm size, const char* unit, u32 block, const char* key, f64 values[DEFS_UNIT_MAX_VALUES])
+{
+    UnitKeyLine found = find_unit_key(text, size, unit, block, key);
+    if (!found.ok || !found.given)
+        return 0;
+    u32 count = field_values(found.field);
+    NV_ASSERT(count <= DEFS_UNIT_MAX_VALUES);
+    for (u32 i = 0; i < count; ++i) {
+        NvTextNumber number = nv_text_parse_number(NULL, 0, found.line.tokens[1 + i], false);
+        if (!number.ok)
+            return 0;
+        values[i] = number.value;
+    }
+    return count;
+}
+
+umm defs_unit_set(const char* text, umm size, const char* unit, u32 block, const char* key, const f64* values, u32 count,
+                  char* out, umm capacity)
+{
+    UnitKeyLine found = find_unit_key(text, size, unit, block, key);
+    if (!found.ok || count != field_values(found.field))
+        return 0;
+    if (found.given)
+        return replace_values(text, size, found.field, &found.line, found.end, values, count, out, capacity);
+
+    // A new line, "<indent><key> <values>", after the block's last key.
+    b32 integer = found.field->kind == FIELD_INTEGER;
+    char written[160];
+    umm used = 0;
+    const char* newline = found.crlf ? "\r\n" : "\n";
+    if (found.insert_newline_first)
+        used += (umm)snprintf(written + used, sizeof(written) - used, "%s", newline);
+    if (found.indent + strlen(key) + 2 > sizeof(written) - used)
+        return 0;
+    memset(written + used, ' ', found.indent);
+    used += found.indent;
+    used += (umm)snprintf(written + used, sizeof(written) - used, "%s", key);
+    for (u32 i = 0; i < count; ++i) {
+        written[used++] = ' ';
+        u32 length = format_value(written + used, sizeof(written) - used, values[i], integer);
+        if (!length)
+            return 0;
+        used += length;
+    }
+    if (!found.insert_newline_first) {
+        if (used + 2 >= sizeof(written))
+            return 0;
+        used += (umm)snprintf(written + used, sizeof(written) - used, "%s", newline);
+    }
+    umm head = (umm)(found.insert_at - text), tail = size - head;
+    if (head + used + tail > capacity)
+        return 0;
+    memmove(out, text, head);
+    memmove(out + head + used, text + head, tail);
+    memcpy(out + head, written, used);
+    return head + used + tail;
 }

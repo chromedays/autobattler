@@ -28,8 +28,9 @@ what is the game's.
 
 ```
 src/                       the game: battle.c/.h (the rules and the 30 Hz tick; no GPU), defs.c (reads data/default.abproj),
-                           main.c (window, frame loop, debug exports), battle_view.c (drawing, deployment input, the Battle panel),
-                           game.h (its state), strings.c (its Korean table)
+                           lab.c/.h (the unit lab's runs on those rules; no GPU), main.c (window, frame loop, debug exports),
+                           battle_view.c (drawing, deployment input, the Battle panel), lab_view.c (the unit lab's camera, lines
+                           and panel sections), game.h (its state), strings.c (its Korean table)
 data/default.abproj        the rules, units, weapons and the stage (docs/specs/abproj.md)
 engine/                    the engine, a submodule: its headers are included as <engine/name.h>; the UI font is engine/assets/fonts/
 tests/                     tests that need no browser, built for Node (web) or natively (Windows) and run with ctest
@@ -100,8 +101,16 @@ Follow `engine/AGENTS.md` ("Conventions") and `engine/docs/CODING_STANDARD.md`. 
 - Debug builds export `Module._battle_debug(n)`, `_battle_debug_deploy`, `_battle_debug_start`, `_battle_debug_run`,
   `_battle_debug_set_speed`, `_battle_debug_step`, `_battle_debug_layout`, `_battle_debug_project`, `_battle_debug_load`,
   `_battle_debug_project_action`, `_battle_debug_project_message`, `_battle_debug_set_rule`, `_battle_debug_project_text`,
-  `_battle_debug_unit_roles`, `_battle_debug_set_role_filter` and `_battle_debug_load_test` for tests; on Windows a new export is also a
+  `_battle_debug_unit_roles`, `_battle_debug_set_role_filter`, `_battle_debug_load_test`, and for the unit lab `_battle_debug_lab(n)`,
+  `_battle_debug_lab_enter`, `_battle_debug_lab_set`, `_battle_debug_lab_action`, `_battle_debug_lab_run` and
+  `_battle_debug_set_unit_value` (values in hundredths, so the Windows script can pass them) for tests; on Windows a new export is also a
   row of `battle_debug_calls` in `src/main.c`.
+- The unit lab (`docs/specs/unit_lab.md`; the panel's `Unit Lab` mode button, from deployment only): one unit of a unit def (one of a
+  squad) against a ground and an air target, on `battle.c`'s own rules. `lab.c` keeps its own small `BattleDefs` (the unit def, the two
+  targets) and `Battle`; the targets are `UNIT_DUMMY` units (no target, no fire, moved by the velocity the lab sets), a unit that holds
+  still is `UNIT_HOLD`, and the round is `endless`. A change of its settings, the unit's values (`defs_unit_set`, `game_set_unit_value`) or
+  the rules goes into the run as it goes and is recorded, so `lab_seek` replays it exactly; Restart on change starts the run over instead.
+  The view draws `game_shown_battle` with the same code, the lab's meshes and grey targets. Its settings are not saved.
 - Roles (`roles`) are for people sorting units: `battle.c` never reads them, so no round depends on them. A unit's `layer` (ground or
   air) and a weapon's `targets` decide what can hit what; air units fly at `altitude`, and a shell passes units whose layer its weapon
   cannot target. Speed controls change only how many ticks a frame runs (the game clock), never the tick, and the effects take the

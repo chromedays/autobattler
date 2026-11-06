@@ -5,7 +5,7 @@
 
 ## 한국어
 
-상태: A의 1~3단계(시뮬레이션과 정의 파일, 실행 파일, 확인과 문서) 구현됨 (2026-10-03), 나머지는 초안. A와 B 두 단계로 나눔. 정의 파일과 규칙 상수는 프로젝트 파일 하나로 합쳐졌다(2026-10-05, `abproj.md`). B의 분대를 A로 당겨 왔다(2026-10-11, "분대" 절).
+상태: A의 1~3단계(시뮬레이션과 정의 파일, 실행 파일, 확인과 문서) 구현됨 (2026-10-03), 나머지는 초안. A와 B 두 단계로 나눔. 정의 파일과 규칙 상수는 프로젝트 파일 하나로 합쳐졌다(2026-10-05, `abproj.md`). B의 분대를 A로 당겨 왔다(2026-10-11, "분대" 절). 유닛 하나를 표적 둘과 싸우게 하는 유닛 실험실을 더했다(2026-11-05, `unit_lab.md`; 패널의 모드 버튼 `Unit Lab`).
 
 ### 목표
 
@@ -574,7 +574,7 @@ Playwright(Release, Debug, 데스크톱과 폰 크기, A와 B 끝마다; 손으�
 
 ## English
 
-Status: A's phases 1 to 3 (the simulation and the definition files, the executable, checks and docs) built (2026-10-03), the rest a draft. Split into two stages, A and B. The definition files and the rule constants merged into one project file (2026-10-05, `abproj.md`). B's squads were brought forward into A (2026-10-11, "Squads").
+Status: A's phases 1 to 3 (the simulation and the definition files, the executable, checks and docs) built (2026-10-03), the rest a draft. Split into two stages, A and B. The definition files and the rule constants merged into one project file (2026-10-05, `abproj.md`). B's squads were brought forward into A (2026-10-11, "Squads"). The unit lab, one unit against two targets, was added (2026-11-05, `unit_lab.md`; the panel's `Unit Lab` mode button).
 
 ### Goal
 

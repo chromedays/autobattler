@@ -111,6 +111,26 @@ internal void rebuild_units(Battle* battle)
     }
 }
 
+UnitId battle_add_unit(Battle* battle, u32 def_index, u32 team, NvVec3 position, u32 flags)
+{
+    NV_ASSERT(battle->phase == BATTLE_DEPLOY && def_index < battle->defs->unit_count);
+    NV_ASSERT(battle->unit_count + 1 < BATTLE_MAX_UNITS);
+    const UnitDef* def = &battle->defs->units[def_index];
+    Unit* unit = &battle->units[++battle->unit_count];
+    *unit = (Unit){0};
+    unit->flags = flags;
+    unit->team = (u8)team;
+    unit->def = (u8)def_index;
+    unit->position = unit->previous_position = position;
+    unit->yaw = unit->previous_yaw = team == TEAM_PLAYER ? 0.0f : NV_PI;
+    unit->health = def->health;
+    if (def->ability.kind == ABILITY_SHIELD)
+        unit->ability.shield.energy = def->ability.shield.capacity;
+    if (team == TEAM_PLAYER)
+        battle->player_units = battle->unit_count; // NOTE: the player's units come first, so add them before the enemy's
+    return (UnitId){battle->unit_count};
+}
+
 void battle_init(Battle* battle, const BattleDefs* defs)
 {
     memset(battle, 0, sizeof(*battle));
@@ -266,7 +286,7 @@ internal void pick_targets(Battle* battle)
 {
     for (u32 i = 1; i <= battle->unit_count; ++i) {
         Unit* unit = &battle->units[i];
-        if (!is_alive(unit))
+        if (!is_alive(unit) || (unit->flags & UNIT_DUMMY))
             continue;
         b32 has_target = unit->target.index && is_alive(&battle->units[unit->target.index]);
         if (!has_target || battle->tick % battle->defs->rules.retarget_ticks == 0)
@@ -285,6 +305,11 @@ internal void move_units(Battle* battle)
 
     for (u32 i = 1; i <= battle->unit_count; ++i) {
         Unit* unit = &battle->units[i];
+        if (unit->flags & UNIT_DUMMY) { // moves by the velocity it was given
+            if (is_alive(unit))
+                unit->position = nv_vec3_add(unit->position, nv_vec3_scale(unit->velocity, BATTLE_TICK_SECONDS));
+            continue;
+        }
         unit->velocity = nv_vec3(0.0f, 0.0f, 0.0f);
         if (!is_alive(unit) || !unit->target.index)
             continue;
@@ -293,7 +318,7 @@ internal void move_units(Battle* battle)
         to_target.y = 0.0f;
         f32 distance = sqrtf(nv_vec3_dot(to_target, to_target));
         f32 stop_distance = def->weapon.range * rules->stop_fraction;
-        if (distance > stop_distance) {
+        if (distance > stop_distance && !(unit->flags & UNIT_HOLD)) {
             f32 step = fminf(def->speed * BATTLE_TICK_SECONDS, distance - stop_distance); // no overshooting the stop
             unit->velocity = nv_vec3_scale(to_target, step / distance / BATTLE_TICK_SECONDS);
             unit->position = nv_vec3_add(unit->position, nv_vec3_scale(unit->velocity, BATTLE_TICK_SECONDS));
@@ -603,6 +628,8 @@ internal void refill_shields(Battle* battle)
 // remaining value wins.
 internal void check_end(Battle* battle)
 {
+    if (battle->endless)
+        return;
     u32 player = battle_alive_count(battle, TEAM_PLAYER), enemy = battle_alive_count(battle, TEAM_ENEMY);
     if (!player || !enemy) {
         battle->outcome = !player && !enemy ? OUTCOME_DRAW : !player ? OUTCOME_ENEMY : OUTCOME_PLAYER;

@@ -346,7 +346,7 @@ stage
 
 ### 나중에 (이 스펙 밖)
 
-- **에디터:** 유닛과 스테이지(배치 포함)도 패널에서 고친다. 규칙처럼 바뀐 값만 제자리에서 바꾼다("규칙 고치기"). 새 문장을 더하는
+- **에디터:** 유닛의 수 키는 유닛 실험실의 Unit 절이 고친다(2026-11-05, `unit_lab.md`의 "유닛 값 고치기"; `defs_unit_set`). 남은 것: 유닛의 낱말 키와 스테이지(배치 포함)도 패널에서 고친다. 규칙처럼 바뀐 값만 제자리에서 바꾼다("규칙 고치기"). 새 문장을 더하는
   곳은 최상위 순서가 정해져 있어 분명하다. 실행 취소도 그때 정한다.
 - **별도 리포:** `default.abproj`를 데이터 리포로 옮기고 엔진 리포가 서브모듈로 고정한다. 버전 줄이 둘의 호환을 확인한다.
 - **스테이지 여러 개:** `stage`에 이름을 붙이고(`stage <이름>`) 여럿을 허용한다. 스테이지마다 전장 크기가 달라지면 `grid`를 `stage`로
@@ -726,7 +726,7 @@ once, without a text editor, and Save writes it to the file.
 
 ### Later (outside this spec)
 
-- **Editor:** units and the stage (its places too) are edited in the panel as well, changing only the edited values in place as the
+- **Editor:** a unit's number keys are edited by the unit lab's Unit section (2026-11-05, `unit_lab.md`, "Editing the unit's values"; `defs_unit_set`). Still to come: a unit's word keys and the stage (its places too) are edited in the panel as well, changing only the edited values in place as the
   rules do ("Editing the rules"). The fixed top-level order makes it clear where new statements go. Undo is decided then too.
 - **A repository of its own:** `default.abproj` moves to a data repository, pinned by the engine repository as a submodule. The
   version line checks that the two fit.

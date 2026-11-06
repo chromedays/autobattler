@@ -5,6 +5,7 @@
 
 #include "battle.h"
 #include "engine/log.h"
+#include "lab.h"
 
 #include <math.h>
 #include <stdio.h>
@@ -386,6 +387,101 @@ internal void test_rule_editing(void)
 
 // The repository's own file: it reads without errors, whatever values a designer has put in it, and the round it plays ends
 // within its time limit. (Its values are not checked; test_project_file does that on a copy.)
+// Editing a unit def in a project's text (defs_unit_get, defs_unit_set; unit_lab.md, "Editing the unit's values").
+internal void test_unit_editing(void)
+{
+    static char edited[sizeof(full_project) + 256], again[sizeof(full_project) + 256];
+    umm size = sizeof(full_project) - 1;
+    f64 values[DEFS_UNIT_MAX_VALUES] = {0};
+    CHECK(defs_unit_get(full_project, size, "Crawler", DEFS_BLOCK_UNIT, "health", values) == 1 && values[0] == 120.0);
+    CHECK(defs_unit_get(full_project, size, "Crawler", DEFS_BLOCK_WEAPON, "launch_angle", values) == 1 && values[0] == 45.0);
+    CHECK(defs_unit_get(full_project, size, "Crawler", DEFS_BLOCK_WEAPON, "muzzle", values) == 3 && values[1] == 0.6 && values[2] == 0.3);
+    // `radius` is the unit's and the shield's, each in its own block.
+    CHECK(defs_unit_get(full_project, size, "Crawler", DEFS_BLOCK_UNIT, "radius", values) == 1 && values[0] == 0.5);
+    CHECK(defs_unit_get(full_project, size, "Crawler", DEFS_BLOCK_ABILITY, "radius", values) == 1 && values[0] == 1.2);
+    CHECK(defs_unit_get(full_project, size, "Crawler", DEFS_BLOCK_UNIT, "squad", values) == 0); // left out: the default
+    CHECK(defs_unit_get(full_project, size, "Crawler", DEFS_BLOCK_UNIT, "range", values) == 0); // the weapon's
+    CHECK(defs_unit_get(full_project, size, "Nobody", DEFS_BLOCK_UNIT, "health", values) == 0);
+    CHECK(defs_unit_get(full_project, size, "Crawler", 7, "health", values) == 0);
+
+    // Writing every given key's own values back gives the same text, byte for byte.
+    const struct { u32 block; const char* key; } keys[] = {
+        {DEFS_BLOCK_UNIT, "cost"}, {DEFS_BLOCK_UNIT, "health"}, {DEFS_BLOCK_UNIT, "armor"}, {DEFS_BLOCK_UNIT, "speed"},
+        {DEFS_BLOCK_UNIT, "radius"}, {DEFS_BLOCK_UNIT, "height"}, {DEFS_BLOCK_WEAPON, "range"}, {DEFS_BLOCK_WEAPON, "damage"},
+        {DEFS_BLOCK_WEAPON, "cooldown"}, {DEFS_BLOCK_WEAPON, "launch_angle"}, {DEFS_BLOCK_WEAPON, "spread"},
+        {DEFS_BLOCK_WEAPON, "muzzle"}, {DEFS_BLOCK_ABILITY, "radius"}, {DEFS_BLOCK_ABILITY, "capacity"},
+        {DEFS_BLOCK_ABILITY, "regen"}, {DEFS_BLOCK_ABILITY, "regen_delay"},
+    };
+    for (u32 i = 0; i < NV_ARRAY_COUNT(keys); ++i) {
+        u32 count = defs_unit_get(full_project, size, "Crawler", keys[i].block, keys[i].key, values);
+        CHECK(count > 0);
+        umm written = defs_unit_set(full_project, size, "Crawler", keys[i].block, keys[i].key, values, count, edited, sizeof(edited));
+    edited[written] = 0;
+        CHECK(written == size && memcmp(edited, full_project, size) == 0);
+    }
+
+    // A change touches only its values, and the comment keeps its column.
+    f64 damage = 45.5;
+    umm written = defs_unit_set(full_project, size, "Crawler", DEFS_BLOCK_WEAPON, "damage", &damage, 1, edited, sizeof(edited));
+    edited[written] = 0;
+    CHECK(written == size + 2 && strstr(edited, "        damage 45.5\n    ") != NULL);
+    CHECK(read_project(edited) && defs.units[0].weapon.damage == 45.5f);
+    f64 speed = 12.25;
+    written = defs_unit_set(full_project, size, "Crawler", DEFS_BLOCK_UNIT, "speed", &speed, 1, edited, sizeof(edited));
+    edited[written] = 0;
+    CHECK(strstr(edited, "    speed 12.25        # m/s\n") != NULL && read_project(edited) && defs.units[0].speed == 12.25f);
+    f64 muzzle[3] = {0.1, 0.7, -0.2};
+    written = defs_unit_set(full_project, size, "Crawler", DEFS_BLOCK_WEAPON, "muzzle", muzzle, 3, edited, sizeof(edited));
+    edited[written] = 0;
+    CHECK(strstr(edited, "        muzzle 0.1 0.7 -0.2\n") != NULL && read_project(edited));
+    CHECK(defs.units[0].weapon.muzzle.x == 0.1f && defs.units[0].weapon.muzzle.z == -0.2f);
+    f64 capacity = 80.0;
+    written = defs_unit_set(full_project, size, "Crawler", DEFS_BLOCK_ABILITY, "capacity", &capacity, 1, edited, sizeof(edited));
+    edited[written] = 0;
+    CHECK(read_project(edited) && defs.units[0].ability.shield.capacity == 80.0f && defs.units[0].radius == 0.5f);
+
+    // A key the file leaves out gets a line after the block's last key: the unit's before its weapon, the weapon's at its end.
+    f64 squad = 4;
+    written = defs_unit_set(full_project, size, "Crawler", DEFS_BLOCK_UNIT, "squad", &squad, 1, edited, sizeof(edited));
+    edited[written] = 0;
+    CHECK(written > size && strstr(edited, "    height 0.8\n    squad 4\n    weapon Lobber\n") != NULL);
+    CHECK(read_project(edited) && defs.units[0].squad_size == 4);
+    CHECK(defs_unit_get(edited, written, "Crawler", DEFS_BLOCK_UNIT, "squad", values) == 1 && values[0] == 4.0);
+    // Written again, it is that line that changes.
+    squad = 5;
+    umm rewritten = defs_unit_set(edited, written, "Crawler", DEFS_BLOCK_UNIT, "squad", &squad, 1, again, sizeof(again));
+    CHECK(rewritten == written && strstr(again, "    squad 5\n") != NULL);
+
+    // A block whose last key ends the text with no line break, with CRLF lines.
+    const char* crlf_unit =
+        "abproj_version 1\r\nrules\r\n    cell_size 2\r\n    grid 32 48\r\n    zone_rows 14\r\n    round_time 60\r\n"
+        "    gravity 9.8\r\n    retarget_interval 0.25\r\n    stop_fraction 0.9\r\n    min_damage_fraction 0.25\r\n"
+        "unit A\r\n    cost 100\r\n    health 10\r\n    speed 1\r\n    radius 0.5\r\n    height 1\r\n"
+        "    weapon W\r\n        range 5\r\n        damage 1\r\n        cooldown 1\r\n        launch_angle 45\r\n"
+        "stage\r\n    supply 1000\r\n    place A 0 34";
+    umm crlf_size = strlen(crlf_unit);
+    f64 spread = 0.25;
+    written = defs_unit_set(crlf_unit, crlf_size, "A", DEFS_BLOCK_WEAPON, "spread", &spread, 1, edited, sizeof(edited));
+    edited[written] = 0;
+    CHECK(strstr(edited, "        launch_angle 45\r\n        spread 0.25\r\nstage\r\n") != NULL);
+    edited[written] = 0;
+    CHECK(read_project(edited) && defs.units[0].weapon.spread == 0.25f);
+    // No ability block: nothing to write into.
+    CHECK(defs_unit_set(crlf_unit, crlf_size, "A", DEFS_BLOCK_ABILITY, "capacity", &capacity, 1, edited, sizeof(edited)) == 0);
+
+    // What is refused.
+    CHECK(defs_unit_set(full_project, size, "Nobody", DEFS_BLOCK_UNIT, "health", &damage, 1, edited, sizeof(edited)) == 0);
+    CHECK(defs_unit_set(full_project, size, "Crawler", DEFS_BLOCK_UNIT, "healt", &damage, 1, edited, sizeof(edited)) == 0);
+    CHECK(defs_unit_set(full_project, size, "Crawler", DEFS_BLOCK_UNIT, "range", &damage, 1, edited, sizeof(edited)) == 0);
+    CHECK(defs_unit_set(full_project, size, "Crawler", DEFS_BLOCK_WEAPON, "muzzle", &damage, 1, edited, sizeof(edited)) == 0);
+    CHECK(defs_unit_set(full_project, size, "Crawler", DEFS_BLOCK_WEAPON, "damage", &damage, 1, edited, 32) == 0);
+    // A value out of range is written; reading the result refuses it.
+    f64 health = -5;
+    written = defs_unit_set(full_project, size, "Crawler", DEFS_BLOCK_UNIT, "health", &health, 1, edited, sizeof(edited));
+    edited[written] = 0;
+    CHECK(written > 0 && !read_project(edited) && first_error_has("'health' must be > 0"));
+}
+
 internal void test_repository_file(void)
 {
     static char text[16384];
@@ -1974,10 +2070,373 @@ internal void test_layers_in_use(void)
     CHECK(battle.units[1].position.x == 10.0f && battle.units[2].position.x != battle.units[3].position.x);
 }
 
+// The unit lab (docs/specs/unit_lab.md): one unit of the Shooter (a squad of six) against the lab's two targets, on the battle's
+// rules. The Shooter reaches 30 m, hits for 30 every 1.5 s with no spread; the targets have 300 health and no armor.
+
+global Lab lab;
+
+internal void lab_project(void)
+{
+    scene_defs();
+    UnitDef* shooter = &defs.units[0];
+    shooter->squad_size = 6;
+    shooter->footprint = 2;
+    shooter->speed = 5.0f;
+    shooter->weapon.range = 30.0f;
+}
+
+// Holding still 20 m from the targets (20.2 m from each, across the gap), the run started.
+internal LabSettings lab_hold_settings(void)
+{
+    LabSettings settings = lab_default_settings(&defs, 0);
+    settings.walk = false;
+    settings.distance = 20.0f;
+    return settings;
+}
+
+internal void lab_run(u32 ticks)
+{
+    for (u32 i = 0; i < ticks; ++i) {
+        lab_tick(&lab);
+        lab.battle.event_count = 0; // as the view does
+    }
+}
+
+// Runs until the target has been killed `kills` times (or `limit` ticks); returns the ticks it ran.
+internal u32 lab_run_to_kill(u32 target, u32 kills, u32 limit)
+{
+    u32 ticks = 0;
+    while (lab.results.targets[target].kills < kills && ticks < limit) {
+        lab_run(1);
+        ++ticks;
+    }
+    return ticks;
+}
+
+internal const Unit* lab_unit(u32 slot)
+{
+    return &lab.battle.units[slot];
+}
+
+internal void test_lab_setup(void)
+{
+    lab_project();
+    CHECK(near_value(lab_max_distance(&defs.rules), 96.0f - 2.0f - 24.0f, 1e-4f));
+    LabSettings settings = lab_default_settings(&defs, 0);
+    CHECK(settings.walk && settings.distance == 45.0f && !settings.targets_move && !settings.restart_on_change);
+    CHECK(settings.target_health == 300.0f && settings.respawn_delay == 1.0f && settings.air_altitude == 10.0f);
+    lab_start(&lab, &defs, &settings);
+    // A squad of six still gives one unit: three in all, the unit first.
+    CHECK(lab.battle.unit_count == 3 && lab.battle.phase == BATTLE_FIGHT && lab.battle.endless);
+    CHECK(lab_unit(LAB_SLOT_UNIT)->team == TEAM_PLAYER && lab_unit(LAB_SLOT_UNIT)->def == LAB_DEF_UNIT);
+    CHECK(lab_unit(LAB_SLOT_UNIT)->flags == 0); // walks
+    CHECK(lab_unit(LAB_SLOT_GROUND)->flags == UNIT_DUMMY && lab_unit(LAB_SLOT_AIR)->flags == UNIT_DUMMY);
+    CHECK(lab.defs.units[LAB_DEF_GROUND].layer == UNIT_LAYER_GROUND && lab.defs.units[LAB_DEF_AIR].layer == UNIT_LAYER_AIR);
+    CHECK(lab.defs.units[LAB_DEF_GROUND].health == 300.0f && lab.defs.units[LAB_DEF_AIR].radius == 1.0f);
+    NvVec3 unit = lab_unit(LAB_SLOT_UNIT)->position, ground = lab_unit(LAB_SLOT_GROUND)->position, air = lab_unit(LAB_SLOT_AIR)->position;
+    CHECK(unit.x == 32.0f && unit.y == 0.0f && unit.z == 24.0f); // the middle of the 64 m width, a quarter of the 96 m length
+    CHECK(ground.x == 29.0f && ground.y == 0.0f && ground.z == 69.0f);
+    CHECK(air.x == 35.0f && air.y == 10.0f && air.z == 69.0f);
+    // The targets stay on the field however far they are asked to stand.
+    settings.distance = 500.0f;
+    lab_start(&lab, &defs, &settings);
+    CHECK(near_value(lab_unit(LAB_SLOT_GROUND)->position.z, 94.0f, 1e-4f));
+
+    // Expected values: armor takes off up to the rules' minimum share.
+    settings = lab_hold_settings();
+    settings.target_armor = 10.0f;
+    lab_start(&lab, &defs, &settings);
+    LabExpected expected = lab_expected(&lab, LAB_GROUND);
+    CHECK(expected.ok && expected.damage_per_hit == 20.0f && expected.shots_to_kill == 15);
+    CHECK(near_value(expected.dps, 20.0f / 1.5f, 1e-4f));
+    CHECK(!lab_expected(&lab, LAB_AIR).ok); // the Shooter hits only the ground
+    settings.target_armor = 28.0f;
+    lab_start(&lab, &defs, &settings);
+    CHECK(lab_expected(&lab, LAB_GROUND).damage_per_hit == 7.5f); // 30 * 0.25 is more than 30 - 28
+}
+
+internal void test_lab_hold(void)
+{
+    lab_project();
+    LabSettings settings = lab_hold_settings();
+    lab_start(&lab, &defs, &settings);
+    NvVec3 start = lab_unit(LAB_SLOT_UNIT)->position;
+    u32 ticks = lab_run_to_kill(LAB_GROUND, 1, 2000);
+    const LabTargetResults* ground = &lab.results.targets[LAB_GROUND];
+    CHECK(ground->kills == 1 && ground->hits == 10 && ground->damage == 300.0f);
+    CHECK(ground->last_kill_ticks == ticks && ground->kill_ticks == ticks);
+    // Ten shots from tick 0, one each 45 ticks, the last landing after its flight: as the expected time says.
+    LabExpected expected = lab_expected(&lab, LAB_GROUND);
+    CHECK(expected.shots_to_kill == 10);
+    CHECK(near_value((f32)ticks * BATTLE_TICK_SECONDS, expected.seconds_to_kill, 3.0f * BATTLE_TICK_SECONDS));
+    CHECK(lab.results.shots == ground->shots && lab.results.shots >= 10 && lab_misses(&lab) == 0);
+    CHECK(lab.results.ticks_with_target == ticks); // the ground target was there the whole time
+    const Unit* unit = lab_unit(LAB_SLOT_UNIT);
+    CHECK(unit->position.x == start.x && unit->position.z == start.z && (unit->flags & UNIT_HOLD));
+    // The air target is out of the Shooter's reach: never aimed at, never hit.
+    CHECK(lab.results.targets[LAB_AIR].shots == 0 && lab.results.targets[LAB_AIR].hits == 0);
+    CHECK(lab_unit(LAB_SLOT_AIR)->health == 300.0f);
+
+    // Out of range, a unit that holds neither fires nor moves.
+    settings.distance = 40.0f;
+    lab_start(&lab, &defs, &settings);
+    lab_run(300);
+    CHECK(lab.results.shots == 0 && lab_unit(LAB_SLOT_UNIT)->position.z == start.z);
+    CHECK(lab_unit(LAB_SLOT_UNIT)->target.index == LAB_SLOT_GROUND && lab.results.ticks_with_target == 300);
+}
+
+internal void test_lab_walk(void)
+{
+    lab_project();
+    LabSettings settings = lab_hold_settings();
+    settings.walk = true;
+    settings.distance = 40.0f;
+    lab_start(&lab, &defs, &settings);
+    // It fires once in range, walking on, and stops at the stop distance: 90% of its 30 m.
+    const Unit* unit = lab_unit(LAB_SLOT_UNIT);
+    u32 ticks = 0;
+    while (lab.results.shots == 0 && ticks++ < 600)
+        lab_run(1);
+    CHECK(ticks < 600 && unit->velocity.z > 0.0f);
+    lab_run(90);
+    f32 dx = lab_unit(LAB_SLOT_GROUND)->position.x - unit->position.x, dz = lab_unit(LAB_SLOT_GROUND)->position.z - unit->position.z;
+    CHECK(unit->velocity.z == 0.0f && near_value(sqrtf(dx * dx + dz * dz), 27.0f, 0.01f));
+}
+
+internal void test_lab_layers(void)
+{
+    // A weapon that hits both layers takes the ground target first at the same distance (the lower slot), then the air one.
+    lab_project();
+    defs.units[0].weapon.targets = TARGET_GROUND | TARGET_AIR;
+    LabSettings settings = lab_hold_settings();
+    settings.respawn_delay = 10.0f;
+    lab_start(&lab, &defs, &settings);
+    lab_run(1);
+    CHECK(lab_unit(LAB_SLOT_UNIT)->target.index == LAB_SLOT_GROUND);
+    CHECK(lab_run_to_kill(LAB_GROUND, 1, 2000) < 2000);
+    lab_run(1);
+    CHECK(lab_unit(LAB_SLOT_UNIT)->target.index == LAB_SLOT_AIR);
+    CHECK(lab_run_to_kill(LAB_AIR, 1, 2000) < 2000);
+    CHECK(lab.results.targets[LAB_AIR].hits == 10 && lab.results.targets[LAB_AIR].damage == 300.0f);
+    CHECK(lab_expected(&lab, LAB_AIR).ok);
+    // With both down the unit has no target, and that time is not counted for DPS.
+    lab_run(1);
+    u32 with_target = lab.results.ticks_with_target;
+    lab_run(30);
+    CHECK(lab_unit(LAB_SLOT_UNIT)->target.index == 0 && lab.results.ticks_with_target == with_target);
+}
+
+internal void test_lab_moving_targets(void)
+{
+    // A target crossing in front of the unit: leading aim lands the one shell on it.
+    lab_project();
+    defs.units[0].weapon.cooldown = 1000.0f; // one shot
+    LabSettings settings = lab_hold_settings();
+    settings.targets_move = true;
+    settings.move_speed = 4.0f;
+    settings.move_width = 40.0f;
+    lab_start(&lab, &defs, &settings);
+    u32 ticks = 0;
+    while ((lab.results.shots == 0 || lab.battle.projectile_count > 0) && ticks++ < 400)
+        lab_run(1);
+    CHECK(ticks < 400 && lab.results.shots == 1 && lab.results.hits == 1);
+    CHECK(lab_unit(LAB_SLOT_GROUND)->velocity.x == 4.0f);
+
+    // Back and forth within the width, turning at each end.
+    settings.move_width = 8.0f;
+    lab_start(&lab, &defs, &settings);
+    f32 low = 1000.0f, high = -1000.0f;
+    for (u32 i = 0; i < 600; ++i) {
+        lab_run(1);
+        low = fminf(low, lab_unit(LAB_SLOT_GROUND)->position.x);
+        high = fmaxf(high, lab_unit(LAB_SLOT_GROUND)->position.x);
+    }
+    CHECK(near_value(low, 29.0f - 4.0f, 0.2f) && near_value(high, 29.0f + 4.0f, 0.2f));
+    // The field's edge turns them too.
+    settings.move_width = 100.0f;
+    lab_start(&lab, &defs, &settings);
+    low = 1000.0f;
+    for (u32 i = 0; i < 1200; ++i) {
+        lab_run(1);
+        low = fminf(low, lab_unit(LAB_SLOT_GROUND)->position.x);
+        high = fmaxf(high, lab_unit(LAB_SLOT_AIR)->position.x);
+    }
+    CHECK(low >= 1.0f - 0.2f && low < 1.5f && high <= 64.0f - 1.0f + 0.2f);
+}
+
+internal void test_lab_respawn(void)
+{
+    lab_project();
+    LabSettings settings = lab_hold_settings();
+    lab_start(&lab, &defs, &settings);
+    lab_run_to_kill(LAB_GROUND, 1, 2000);
+    u32 died = lab.battle.tick;
+    CHECK(lab_unit(LAB_SLOT_GROUND)->flags & UNIT_DEAD);
+    while ((lab_unit(LAB_SLOT_GROUND)->flags & UNIT_DEAD) && lab.battle.tick < died + 100)
+        lab_run(1);
+    // Back a second later, at its home with its health, and the unit takes it as its target again.
+    CHECK(lab.battle.tick == died + 30);
+    CHECK(lab_unit(LAB_SLOT_GROUND)->health == 300.0f && lab_unit(LAB_SLOT_GROUND)->position.x == 29.0f);
+    lab_run(1);
+    CHECK(lab_unit(LAB_SLOT_UNIT)->target.index == LAB_SLOT_GROUND);
+    // Its time to kill counts from when it came back.
+    u32 back = lab.battle.tick - 1;
+    lab_run_to_kill(LAB_GROUND, 2, 2000);
+    CHECK(lab.results.targets[LAB_GROUND].last_kill_ticks == lab.battle.tick - back);
+
+    // No delay: alive again after the tick it died in.
+    settings.respawn_delay = 0.0f;
+    lab_start(&lab, &defs, &settings);
+    lab_run_to_kill(LAB_GROUND, 1, 2000);
+    CHECK(!(lab_unit(LAB_SLOT_GROUND)->flags & UNIT_DEAD) && lab_unit(LAB_SLOT_GROUND)->health == 300.0f);
+}
+
+internal void test_lab_endless(void)
+{
+    // Past the round's time and with every target it can hit down, the run goes on.
+    lab_project();
+    defs.rules.round_ticks = 60;
+    LabSettings settings = lab_hold_settings();
+    settings.respawn_delay = 10.0f;
+    lab_start(&lab, &defs, &settings);
+    lab_run_to_kill(LAB_GROUND, 1, 2000);
+    lab_run(10);
+    CHECK(lab.battle.phase == BATTLE_FIGHT && lab.battle.outcome == OUTCOME_NONE);
+    CHECK(battle_alive_count(&lab.battle, TEAM_ENEMY) == 1); // the air target, which the Shooter cannot hit
+}
+
+internal void test_lab_changes(void)
+{
+    lab_project();
+    give_shield(0, 60.0f);
+    LabSettings settings = lab_hold_settings();
+    lab_start(&lab, &defs, &settings);
+    lab_run(100);
+    u32 shots = lab.results.shots;
+    CHECK(shots > 0 && lab_unit(LAB_SLOT_GROUND)->health < 300.0f);
+
+    // A lower maximum cuts the health of what is alive; the run and its results go on.
+    f32 health = lab_unit(LAB_SLOT_GROUND)->health;
+    settings.target_health = health - 10.0f;
+    lab_change(&lab, &defs, &settings);
+    CHECK(lab.battle.tick == 100 && lab.results.shots == shots && lab.results.changes == 1 && lab.change_count == 1);
+    CHECK(lab_unit(LAB_SLOT_GROUND)->health == health - 10.0f && lab_unit(LAB_SLOT_AIR)->health == health - 10.0f);
+    // A higher one leaves it as it is.
+    settings.target_health = 1000.0f;
+    lab_change(&lab, &defs, &settings);
+    CHECK(lab_unit(LAB_SLOT_GROUND)->health == health - 10.0f && lab.results.changes == 2);
+    // The unit's def as the project now has it: a smaller shield, a stronger weapon.
+    defs.units[0].ability.shield.capacity = 20.0f;
+    defs.units[0].weapon.damage = 50.0f;
+    lab_change(&lab, &defs, &settings);
+    CHECK(lab_unit(LAB_SLOT_UNIT)->ability.shield.energy == 20.0f);
+    lab_run(150); // the shells fired before have landed (they keep the damage they were fired with)
+    u32 hits = lab.results.hits;
+    f32 damage = lab.results.targets[LAB_GROUND].damage;
+    u32 limit = lab.battle.tick + 200;
+    while (lab.results.hits == hits && lab.battle.tick < limit)
+        lab_run(1);
+    CHECK(lab.results.hits == hits + 1 && lab.results.targets[LAB_GROUND].damage - damage == 50.0f);
+    // A new distance puts the targets at their new homes at once.
+    settings.distance = 25.0f;
+    lab_change(&lab, &defs, &settings);
+    CHECK(lab_unit(LAB_SLOT_GROUND)->position.z == 24.0f + 25.0f && lab_unit(LAB_SLOT_AIR)->position.z == 24.0f + 25.0f);
+    // Walking turned on: the unit is free to move.
+    settings.walk = true;
+    lab_change(&lab, &defs, &settings);
+    CHECK(!(lab_unit(LAB_SLOT_UNIT)->flags & UNIT_HOLD));
+    CHECK(lab.results.changes == 5 && lab.change_count == 5);
+    // Restart on change alone changes nothing in the run.
+    settings.restart_on_change = true;
+    u32 tick = lab.battle.tick;
+    lab_change(&lab, &defs, &settings);
+    CHECK(lab.battle.tick == tick && lab.change_count == 5 && lab.settings.restart_on_change);
+    // With it on, a change starts over.
+    settings.distance = 22.0f;
+    lab_change(&lab, &defs, &settings);
+    CHECK(lab.battle.tick == 0 && lab.results.shots == 0 && lab.change_count == 0 && lab.results.changes == 0);
+    CHECK(lab_unit(LAB_SLOT_GROUND)->position.z == 24.0f + 22.0f);
+    // Another unit def starts over even with it off.
+    lab_run(50);
+    scene_air_unit(); // unit def 2 flies
+    settings.restart_on_change = false;
+    settings.unit_def = 2;
+    lab_change(&lab, &defs, &settings);
+    CHECK(lab.battle.tick == 0 && lab.defs.units[LAB_DEF_UNIT].layer == UNIT_LAYER_AIR);
+    CHECK(lab_unit(LAB_SLOT_UNIT)->position.y == 10.0f);
+    // Reset results clears them and nothing else.
+    lab_run(50);
+    lab_reset_results(&lab);
+    CHECK(lab.battle.tick == 50 && lab.results.shots == 0 && lab.results.changes == 0 && lab.change_count == 1);
+}
+
+internal u32 lab_state_hash(void)
+{
+    return nv_fnv1a(battle_hash(&lab.battle), &lab.results, sizeof(lab.results));
+}
+
+internal void test_lab_seek(void)
+{
+    lab_project();
+    LabSettings settings = lab_hold_settings();
+    lab_start(&lab, &defs, &settings);
+    static u32 hashes[601];
+    hashes[0] = lab_state_hash();
+    for (u32 tick = 1; tick <= 600; ++tick) {
+        // Changes on the way, at the ticks they are made: before the tick runs.
+        if (tick == 101) {
+            settings.distance = 26.0f;
+            lab_change(&lab, &defs, &settings);
+        } else if (tick == 201) {
+            settings.targets_move = true;
+            lab_change(&lab, &defs, &settings);
+        } else if (tick == 301) {
+            lab_reset_results(&lab);
+        } else if (tick == 401) {
+            defs.units[0].weapon.damage = 45.0f;
+            lab_change(&lab, &defs, &settings);
+        }
+        lab_run(1);
+        hashes[tick] = lab_state_hash();
+    }
+    // Made at tick 100, a change is part of the state at 100: the step back plays it in again.
+    const u32 ticks[] = {599, 401, 400, 300, 250, 100, 99, 1, 0};
+    for (u32 i = 0; i < NV_ARRAY_COUNT(ticks); ++i) {
+        CHECK(lab_seek(&lab, ticks[i]));
+        CHECK(lab.battle.tick == ticks[i] && lab.battle.event_count == 0);
+        if (ticks[i] == 100 || ticks[i] == 300 || ticks[i] == 400) {
+            // The state at that tick before the change was made: the seek put the change in, as it was when the next tick ran.
+            lab_run(1);
+            CHECK(lab_state_hash() == hashes[ticks[i] + 1]);
+        } else {
+            CHECK(lab_state_hash() == hashes[ticks[i]]);
+        }
+    }
+    // Forward again from a step back: the recorded changes go in at their ticks.
+    CHECK(lab_seek(&lab, 150));
+    lab_run(450);
+    CHECK(lab.battle.tick == 600 && lab_state_hash() == hashes[600]);
+    // A change after a step back drops the ones that came later.
+    CHECK(lab_seek(&lab, 150) && lab.change_count == 4);
+    settings.distance = 30.0f;
+    lab_change(&lab, &defs, &settings);
+    CHECK(lab.change_count == 2);
+    // Too many changes to play again: no stepping back.
+    for (u32 i = 0; i < LAB_MAX_CHANGES; ++i) {
+        settings.distance = i % 2 ? 30.0f : 31.0f;
+        lab_change(&lab, &defs, &settings);
+        lab_run(1);
+    }
+    CHECK(lab.changes_full && !lab_seek(&lab, 10) && lab.battle.tick == 150 + LAB_MAX_CHANGES);
+    lab_start(&lab, &defs, &settings);
+    CHECK(!lab.changes_full && lab_seek(&lab, 0));
+}
+
 int main(void)
 {
     test_project_file();
     test_rule_editing();
+    test_unit_editing();
     test_repository_file();
     test_definition_syntax();
     test_project_structure();
@@ -2000,6 +2459,15 @@ int main(void)
     test_whole_round();
     test_golden_rounds();
     test_seek();
+    test_lab_setup();
+    test_lab_hold();
+    test_lab_walk();
+    test_lab_layers();
+    test_lab_moving_targets();
+    test_lab_respawn();
+    test_lab_endless();
+    test_lab_changes();
+    test_lab_seek();
     if (failures) {
         printf("battle_test: %d failure(s)\n", failures);
         return 1;

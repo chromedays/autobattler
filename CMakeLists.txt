@@ -7,7 +7,7 @@ add_subdirectory(engine)
 add_compile_options(${NV_COMPILE_OPTIONS})
 add_compile_definitions(${NV_COMPILE_DEFINITIONS})
 
-add_executable(autobattler src/main.c src/battle.c src/battle_view.c src/defs.c src/strings.c)
+add_executable(autobattler src/main.c src/battle.c src/battle_view.c src/defs.c src/lab.c src/lab_view.c src/strings.c)
 target_link_libraries(autobattler PRIVATE nv)
 # A package of only what it reads (docs/specs/battle.md, "Executable"): the engine's UI font and the definition files.
 nv_setup_executable(autobattler ROOT COMPONENT autobattler
