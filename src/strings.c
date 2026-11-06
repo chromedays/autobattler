@@ -114,6 +114,7 @@ global const NvStringPair entries[] = {
     {"Restart on change", "바꾸면 다시 시작"},
     {"Too many changes to step back; Restart to step back again.", "바꾼 것이 너무 많아 되감을 수 없습니다. 다시 시작하면 다시 되감을 수 있습니다."},
     {"Time: %.1f s (%u ticks)", "시간: %.1f초 (%u틱)"},
+    {"%.1f m", "%.1f m"},
     {"The unit fights two targets, one on the ground and one in the air, by the battle's rules. A change goes into the run as it goes; with Restart on change it starts the run over. Drag to move the view, drag with the right button or two fingers to turn it, and use the wheel or pinch to zoom.",
      "유닛이 전투 규칙대로 지상과 공중의 두 표적과 싸웁니다. 바꾼 것은 진행 중인 실험에 바로 걸리고, 바꾸면 다시 시작을 켜면 실험을 처음부터 다시 시작합니다. 드래그로 화면을 옮기고, 오른쪽 버튼 드래그나 두 손가락으로 돌리고, 휠이나 핀치로 확대합니다."},
     {"No GPU runs this program: it needs Direct3D 12 feature level 12_2 and shader model 6.6.\n\n%s",

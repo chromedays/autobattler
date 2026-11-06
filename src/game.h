@@ -191,6 +191,7 @@ void view_time_controls(Game* game, b32 can_step_back, b32 can_step_forward);
 // lab_view.c
 void lab_view_start(Game* game);  // the camera on the lab's unit and targets
 void lab_view_draw(Game* game);   // every frame in the lab: its meshes kept up, its rings and paths
+void lab_view_labels(Game* game); // every frame in the lab, after the camera is placed: the air target's height
 void lab_view_panel(Game* game);  // the panel's lab sections
 const UnitValueKey* lab_unit_value_key(u32 index); // NULL past the last
 

@@ -130,6 +130,53 @@ void lab_view_draw(Game* game)
     }
 }
 
+// Where a world point is on the canvas, in CSS pixels (ImGui's), as the camera is placed now. Fails behind the camera or
+// outside the viewport.
+typedef struct ScreenPoint {
+    b32 ok;
+    f32 x, y;
+} ScreenPoint;
+
+internal ScreenPoint screen_point(Game* game, NvVec3 point)
+{
+    const NvSceneOutput* out = &game->layout.scene;
+    NvMat4 view, projection;
+    nv_renderer_camera_matrices(game->scene, *out, &view, &projection);
+    NvMat4 view_projection = nv_mat4_mul(projection, view);
+    f32 w = view_projection.e[3] * point.x + view_projection.e[7] * point.y + view_projection.e[11] * point.z + view_projection.e[15];
+    if (w <= 1e-4f)
+        return (ScreenPoint){0};
+    NvVec3 clip = nv_mat4_transform_point(view_projection, point);
+    f32 ratio = nv_window_pixel_ratio(&game->window);
+    f32 x = (f32)out->image.x + (clip.x / w * 0.5f + 0.5f) * (f32)out->width * out->pixel_width;
+    f32 y = (f32)out->image.y + (0.5f - clip.y / w * 0.5f) * (f32)out->height * out->pixel_height;
+    const NvRect* viewport = &game->layout.viewport;
+    if (x < (f32)viewport->x || y < (f32)viewport->y || x >= (f32)(viewport->x + viewport->width) || y >= (f32)(viewport->y + viewport->height))
+        return (ScreenPoint){0};
+    return (ScreenPoint){.ok = true, .x = x / ratio, .y = y / ratio};
+}
+
+// Text beside the middle of the air target's line to the ground: its height. Drawn after the camera is placed for the frame
+// (view_update), behind the panel.
+void lab_view_labels(Game* game)
+{
+    const Unit* target = &game->lab.battle.units[LAB_SLOT_AIR];
+    if (target->flags & UNIT_DEAD || game->unit_nodes_made < LAB_SLOT_AIR)
+        return;
+    NvVec3 top = nv_scene_get(game->scene, game->unit_nodes[LAB_SLOT_AIR])->position; // where it is drawn, between ticks
+    ScreenPoint middle = screen_point(game, nv_vec3(top.x, top.y * 0.5f, top.z));
+    if (!middle.ok)
+        return;
+    char text[32];
+    snprintf(text, sizeof(text), T("%.1f m"), top.y);
+    ImDrawList* draw = igGetBackgroundDrawList(NULL);
+    ImVec2_c size = igCalcTextSize(text, NULL, false, -1.0f);
+    ImVec2_c pos = {middle.x + 8.0f, middle.y - size.y * 0.5f};
+    ImDrawList_AddRectFilled(draw, (ImVec2_c){pos.x - 3.0f, pos.y - 1.0f}, (ImVec2_c){pos.x + size.x + 3.0f, pos.y + size.y + 1.0f},
+                             0x99000000u, 3.0f, 0);
+    ImDrawList_AddText_Vec2(draw, pos, 0xFFDDDDE6u, text, NULL);
+}
+
 // The panel
 
 internal b32 lab_number(const char* label, f32* value, f32 speed, f32 min, f32 max, const char* format)
