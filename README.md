@@ -28,6 +28,9 @@ ctest --test-dir build --output-on-failure          # tests/, Node로 실행
 python3 -m http.server -d build 8000                # http://localhost:8000/
 ```
 
+고치면서 볼 때는 `node engine/tools/dev_server.mjs --build build`(또는 `just dev`)가 같은 페이지를 내보내고, 파일을 저장하면 게임을 다시
+빌드하고, 빌드가 바뀌면 열린 페이지를 다시 불러온다(`engine/docs/specs/dev_server.md`).
+
 Windows는 `AGENTS.md`의 "On Windows"와 `justfile`(`just setup`, `just run Release`)을 본다.
 
 ### 엔진 올리기
@@ -61,6 +64,9 @@ cmake --build build
 ctest --test-dir build --output-on-failure          # tests/, run under Node
 python3 -m http.server -d build 8000                # http://localhost:8000/
 ```
+
+While working on it, `node engine/tools/dev_server.mjs --build build` (or `just dev`) serves the same page, rebuilds the game when a
+file is saved and reloads the open pages when the build changes (`engine/docs/specs/dev_server.md`).
 
 For Windows, see "On Windows" in `AGENTS.md` and the `justfile` (`just setup`, `just run Release`).
 

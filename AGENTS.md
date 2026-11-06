@@ -56,6 +56,13 @@ cmake --build build
 python3 -m http.server -d build 8000   # then open http://localhost:8000/
 ```
 
+While working on it, serve the page with the engine's development server instead (`engine/docs/specs/dev_server.md`): it rebuilds
+the game when a file of this repository or `engine/` is saved and reloads the open pages when the build changes (`just dev`).
+
+```sh
+node engine/tools/dev_server.mjs --build build   # http://localhost:8000/; --no-build only reloads
+```
+
 The engine's build downloads its shader tools once (`engine/cmake/shaders.cmake`, into `NV_TOOLS_DIR`); see `engine/AGENTS.md`.
 
 ### On Windows
