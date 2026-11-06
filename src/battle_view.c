@@ -390,9 +390,15 @@ internal void draw_zone_grid(NvRenderer* renderer, const BattleRules* rules, u32
         nv_renderer_debug_line(renderer, cell_corner(rules, x, first_row, 0.03f), cell_corner(rules, x, first_row + rules->zone_rows, 0.03f), color);
 }
 
+// A circle of debug lines. Its segments are about RING_SEGMENT_LENGTH long, so a weapon's range (tens of meters) is round
+// too, between RING_MIN_SEGMENTS (a shield) and RING_MAX_SEGMENTS (which keeps a long range within the debug lines).
+#define RING_SEGMENT_LENGTH 0.5f
+#define RING_MIN_SEGMENTS   20
+#define RING_MAX_SEGMENTS   256
 void view_draw_ring(NvRenderer* renderer, NvVec3 center, NvVec3 u, NvVec3 v, f32 radius, NvVec3 color)
 {
-    const u32 segments = 20;
+    f32 wanted = ceilf(2.0f * NV_PI * radius / RING_SEGMENT_LENGTH);
+    u32 segments = (u32)nv_clamp_f32(wanted, (f32)RING_MIN_SEGMENTS, (f32)RING_MAX_SEGMENTS);
     NvVec3 previous = nv_vec3_add(center, nv_vec3_scale(u, radius));
     for (u32 i = 1; i <= segments; ++i) {
         f32 angle = (f32)i * (2.0f * NV_PI / (f32)segments);
