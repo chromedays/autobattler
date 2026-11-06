@@ -132,6 +132,11 @@ b32 game_load_project(Game* game, const char* name, const char* text, umm size)
     }
 
     if (ok) {
+        // Once a load: the keys the round does not follow yet (docs/specs/unit_fields.md, "Interim"). Edits read the project again
+        // and do not warn again.
+        if (next->unfollowed[0])
+            nv_log(NV_LOG_WARNING, "battle", "%s: the round does not follow these keys yet: %s (docs/specs/unit_fields.md)", name,
+                   next->unfollowed);
         game->defs = *next;
         game->defs_ok = true;
         memcpy(game->project_text, text, size);
@@ -213,15 +218,15 @@ b32 game_set_rule(Game* game, const char* key, const f64* values, u32 count)
     return ok;
 }
 
-b32 game_set_unit_value(Game* game, u32 block, const char* key, const f64* values, u32 count)
+b32 game_set_unit_value(Game* game, const char* key, f64 value)
 {
     if (!game_rules_editable(game) || game->lab_settings.unit_def >= game->defs.unit_count)
         return false;
     umm mark = game->scratch.used;
     char* text = NV_PUSH_ARRAY(&game->scratch, PROJECT_MAX_SIZE, char);
     BattleDefs* next = NV_PUSH_STRUCT(&game->scratch, BattleDefs);
-    const char* unit = game->defs.units[game->lab_settings.unit_def].name;
-    umm size = defs_unit_set(game->project_text, game->project_size, unit, block, key, values, count, text, PROJECT_MAX_SIZE);
+    const char* unit = game->defs.units[game->lab_settings.unit_def].id;
+    umm size = defs_unit_set(game->project_text, game->project_size, unit, key, value, text, PROJECT_MAX_SIZE);
     b32 ok = size && defs_read_project(next, game->project_name, text, size);
     if (ok) {
         put_edited_project(game, text, size, next);
@@ -659,15 +664,14 @@ NV_DEBUG_EXPORT void battle_debug_lab_run(int ticks)
     }
 }
 
-// Changes a value of the lab's unit def as its Unit section does: key `index` of lab_unit_value_key (the vector `muzzle` is
-// not one this takes), `value` in hundredths. 1 when the change was made.
+// Changes a value of the lab's unit def as its Unit section does: key `index` of lab_unit_value_key, `value` in hundredths. 1
+// when the change was made.
 NV_DEBUG_EXPORT int battle_debug_set_unit_value(int index, int value)
 {
     const UnitValueKey* key = lab_unit_value_key((u32)index);
-    if (!key || key->kind == UNIT_VALUE_VECTOR)
+    if (!key)
         return 0;
-    f64 number = (f64)value / 100.0;
-    return game_set_unit_value(&game_state, key->block, key->key, &number, 1);
+    return game_set_unit_value(&game_state, key->key, (f64)value / 100.0);
 }
 #endif
 

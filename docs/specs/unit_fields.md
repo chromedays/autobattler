@@ -1,7 +1,7 @@
 # 위키 필드에 맞춘 유닛 형식 스펙
 
-상태: 초안 (2026-11-06). 합의 전이다. `abproj.md`의 `unit` 블록을 바꾸므로, 합의되면 구현과 함께 `abproj.md`의 표와 예를 이 스펙대로
-고친다("단계" 5).
+상태: 구현됨 (2026-11-06). 웹의 Release와 Debug 빌드로 확인했다. Windows 빌드는 아직 하지 않았다("단계"). 열린 질문 5(위키 안의 이름)가
+남아 있다.
 
 ### 목표
 
@@ -205,8 +205,9 @@ spacing = min(W / columns, D / rows)
   볼륨이나 몸의 접촉은 따지지 않는다. 사거리 값이 곧 트리거 거리다.
 - 피해 사건 하나는 포탄 명중과 같은 길을 간다: 실드가 있으면 실드가 통째로 받고, 없으면 방어력을 뺀 HP 피해가 틱 끝에 들어간다.
 - 쿨다운, 멈춤 거리(`stop_fraction`), 대상 고르기는 다른 공격과 같다.
-- `fire_weapons`(`battle.c`)에서 `fire_shell` 대신 이 갈래를 탄다. 이벤트는 피해 사건마다 `BATTLE_EVENT_HIT`(실드가 받으면 `BATTLE_EVENT_SHIELD_HIT`)이고, 발사 이벤트(`BATTLE_EVENT_FIRE`)는 없다.
-  뷰는 공격자와 대상 사이에 짧은 타격 이펙트를 그린다.
+- `attack`(`battle.c`, 전의 `fire_weapons`)에서 `fire_shell` 대신 `strike`를 탄다. 공격 하나에 `BATTLE_EVENT_STRIKE` 하나(위치는 대상의 몸
+  가운데, 방향은 공격자에서 대상으로)를 내고, 피해 사건마다 `BATTLE_EVENT_HIT`(실드가 받으면 `BATTLE_EVENT_SHIELD_HIT`)을 낸다. 발사
+  이벤트(`BATTLE_EVENT_FIRE`)는 없다. 뷰는 STRIKE에 대상 위의 짧은 흰 타격 이펙트를 그린다. 실험실은 STRIKE를 발사처럼 Shots로 센다.
 
 ### 과도기
 
@@ -215,7 +216,9 @@ spacing = min(W / columns, D / rows)
 - **투사체 공격은 모두 지금의 포탄으로 쏜다.** `attack_type`이 `UnguidedProjectile`이든 `GuidedProjectile`이든, `trajectory_mode`가 무엇이든 그렇다(근접은 위 "근접"). 발사각은
   45° 상수(`BATTLE_INTERIM_LAUNCH_ANGLE`, `battle.c`)이고, 퍼짐은 `aim_point_scatter_m`, 시작점은 히트박스 가운데다. 중력은 규칙의 `gravity`다.
 - 투사체 공격 한 번은 한 발이다(`hits_or_shots_per_attack` 무시). 범위 피해, 관통, 대공 우선순위는 없다.
-- `defs_read_project`는 라운드가 따르지 않는 값이 있으면 경고 한 줄을 남긴다(오류가 아니므로 읽기는 성공한다). 따르지 않는 값은:
+- `defs_read_project`는 라운드가 따르지 않는 값의 키를 `BattleDefs.unfollowed`에 적는다(오류가 아니므로 읽기는 성공한다). 프로젝트를
+  불러올 때(`game_load_project`) 그것이 비어 있지 않으면 경고 한 줄을 남긴다. 실험실이나 Rules 절의 고침은 글 전체를 다시 읽지만 경고를
+  되풀이하지 않는다. 따르지 않는 값은:
   `Melee`가 아닌 `attack_type`, 투사체 유닛의 1보다 큰 `hits_or_shots_per_attack`, 0보다 큰 `splash_radius`, `target_priority`,
   `aim_point_scatter_m`을 뺀 투사체 키와 유도 키다. 줄은:
   `default.abproj: the round does not follow these keys yet: attack_type, hits_or_shots_per_attack, ... (docs/specs/unit_fields.md)`.
@@ -224,18 +227,20 @@ spacing = min(W / columns, D / rows)
 ### 코드
 
 - **`defs.c`:** 필드 표(`unit_fields`)가 이 스펙의 키 표가 된다. `weapon_fields`, `shield_fields`, 블록 스택의 셋째 단은 없어진다. 새
-  `FieldKind`: `FIELD_TEXT`, `FIELD_LIST`(역할), `FIELD_ENUM`(낱말 목록을 가진다), `FIELD_BOOL`. 조건부 필수와 금지(`attack_type`,
-  `trajectory_mode`, `unit_layer`, `target_layer`에 따른 것)는 블록이 닫힐 때 검사한다.
+  `FieldKind`: `FIELD_TEXT`, `FIELD_WORD`(낱말 목록과 첫 값을 가진다), `FIELD_BOOL`, 그리고 파일이 정수로 쓰는 f32인 `FIELD_WHOLE`.
+  역할 목록은 필드가 아니라 따로 읽는다. 키마다의 `when`(`WHEN_AIR`, `WHEN_BOTH`, `WHEN_PROJECTILE`, `WHEN_GUIDED`, `WHEN_ARC`)이 조건부
+  필수와 금지를 정하고, 블록이 닫힐 때 검사한다(`check_unit`). 키가 39개라 블록의 `seen`은 u64다. 지금 쓰는 키가 없는 `FIELD_VECTOR`는
+  나중의 키를 위해 남긴다.
 - **`UnitDef`(`battle.h`):** CSV 한 행이다. 평평한 필드에, 공격과 투사체 값은 하위 구조체로 묶는다:
 
   ```c
   typedef struct ProjectileDef {
       f32 initial_speed, forward_acceleration, max_speed; // m/s, m/s²; max_speed 0 when it has none
-      u32 lifetime_ticks;
+      f32 lifetime;                    // seconds
       f32 max_travel, collision_radius, gravity_scale, aim_point_scatter, launch_spread; // launch_spread in radians
       u32 piercing_count;
       b32 interceptable, retargeting_allowed, target_leading;
-      ProjectileTrajectory trajectory; // PROJECTILE_STRAIGHT, PROJECTILE_SCRIPTED_ARC
+      ProjectileTrajectory trajectory; // TRAJECTORY_STRAIGHT, TRAJECTORY_SCRIPTED_ARC
       f32 arc_height;
       f32 turn_rate, guidance_delay;   // radians per second, seconds; guided only
       GuidanceMode guidance_mode;      // GUIDANCE_NONE, GUIDANCE_PREDICTIVE_INTERCEPTION
@@ -243,18 +248,20 @@ spacing = min(W / columns, D / rows)
   } ProjectileDef;
   ```
 
-  `UnitDef`는 `id`(이름), `name`(글), `cost`, `squad_size`, `footprint_w`, `footprint_d`, `layer`, `target_layers`, `target_priority`,
-  `radius`, `height`, `altitude`, `hp`, `armor`, `shield_hp`, `move_speed`, `range`, `damage`, `attack_ticks`, `hits_per_attack`,
-  `splash_radius`, `attack_type`, `projectile`을 가진다. `WeaponDef`, `AbilityDef`, `ABILITY_SHIELD`는 없어진다. 정수 키는 정수로 읽지만
+  `UnitDef`는 `id`(이름), `name`(글), `cost`, `squad_size`, `footprint_w`, `footprint_d`, `layer`, `target_layer`(낱말)과 그 비트
+  `targets`, `target_priority`, `radius`, `height`, `altitude`, `hp`, `armor`, `shield_hp`, `move_speed`, `range`, `damage`,
+  `attack_interval`(초; 실험실의 위젯이 파일의 값을 그대로 보이도록 틱이 아니라 초로 담는다), `hits_per_attack`, `splash_radius`,
+  `attack_type`, `projectile`을 가진다. `WeaponDef`, `AbilityDef`, `ABILITY_SHIELD`는 없어진다. 정수 키는 정수로 읽지만
   `hp`, `armor`, `damage`는 D-23 전까지 `f32`로 담는다(라운드의 계산이 아직 부동소수점이다).
-- **`defs_unit_get`, `defs_unit_set`:** 블록이 하나뿐이므로 `block` 인자와 `DefsBlock`이 없어진다. 없는 선택 키를 더할 때는 블록의
-  마지막 줄 뒤에 둔다(지금과 같다).
+- **`defs_unit_get`, `defs_unit_set`:** 블록이 하나뿐이므로 `block` 인자와 `DefsBlock`이 없어지고, 값도 하나다
+  (`defs_unit_get(text, size, unit, key, &value)`, `defs_unit_set(text, size, unit, key, value, out, capacity)`). 수 키만 받는다. 없는 선택
+  키를 더할 때는 유닛의 마지막 키 줄 뒤에 둔다.
 - **실험실(`lab_view.c`의 `unit_value_keys`):** 고칠 수 있는 키는 수와 정수 키 전부다(열거형, 불리언, 글, 목록은 아직 고치지 않는다,
   `unit_lab.md`의 "나중에"). 라벨은 CSV 이름을 읽기 쉽게 한 영어이고(`HP`, `Move speed (m/s)`, `Attack interval (s)`) `src/strings.c`에
   한국어 행을 더한다. "Battle only"는 `cost`, `squad_size`, `footprint_w`, `footprint_d`다. 실험실의 표적(`UNIT_DUMMY`)도 새 `UnitDef`로 만든다.
 - **뷰:** 배치 목록과 실험실의 유닛 고르기는 `name`을 보인다(`Scout Swarm x24 (50)`). 이름은 데이터이므로 `T()`를 거치지 않는다.
-- **디버그 내보내기:** 이름은 그대로다. `_battle_debug_set_unit_value(index, value)`는 새 키 표의 번호를 쓴다. 실드 에너지를 돌려주는
-  값은 유닛의 실드 HP를 돌려준다.
+- **디버그 내보내기:** 이름은 그대로다. `_battle_debug_set_unit_value(index, value)`는 새 키 표의 번호를 쓴다(`unit_lab.md`).
+- **실드 그리기:** 실드가 남은 유닛에 몸을 감싸는 세 고리(`max(radius_m, height_m / 2) × 1.25`), 남은 몫만큼 밝게.
 
 ### `default.abproj`
 
@@ -438,6 +445,9 @@ unit U10
 - 저장소의 `default.abproj`는 오류 없이 읽히고 한 라운드가 `round_ticks` 안에 끝난다(지금과 같다).
 
 웹의 Release와 Debug, Windows의 Release와 Debug를 모두 빌드하고, 실험실에서 U01–U10을 하나씩 골라 콘솔에 WebGPU 오류가 없는지 본다.
+한 일(2026-11-06): 웹의 두 빌드와 그 ctest, 헤드리스 Chromium(Playwright, 손으로 돌린 검사)에서 실험실의 U01–U10을 300틱씩, Unit 절의
+`hp` 고침, 거울 배치의 한 라운드. 콘솔에는 favicon의 404와 위 경고 말고는 오류와 경고가 없다. 리눅스에서 `battle_test`를 gcc의
+AddressSanitizer와 UndefinedBehaviorSanitizer로도 돌렸다. Windows는 아직이다.
 
 ### 서드파티
 
@@ -446,12 +456,12 @@ unit U10
 
 ### 단계
 
-1. **형식:** `defs.c`의 키 표, 새 값의 종류, 조건부 검사, 경고 줄, `UnitDef`. 형식 테스트.
-2. **규칙:** 직사각형 footprint와 생성 격자(D-07), 실드 HP(D-05, D-10), 근접(D-13), 과도기의 포탄. 테스트와 황금 해시.
-3. **화면:** 실험실의 키 표와 라벨(`strings.c`), 실드 그리기, 이름 보이기, 디버그 내보내기(`battle_debug_calls`도).
-4. **데이터:** `default.abproj`를 U01–U10과 새 규칙 값으로.
-5. **문서:** `abproj.md`(키 표, 값의 종류, 예, 버전 표 1행), `unit_lab.md`("유닛 값 고치기"의 키), `AGENTS.md`(형식 설명). 이 스펙의
-   상태를 "구현됨"으로. `battle.md`는 더 이상 쓰지 않는 문서라 고치지 않는다(규칙의 기준은 위키다).
+1. **형식 (끝남):** `defs.c`의 키 표, 새 값의 종류, 조건부 검사, 따르지 않는 키 목록, `UnitDef`. 형식 테스트.
+2. **규칙 (끝남):** 직사각형 footprint와 생성 격자(D-07), 실드 HP(D-05, D-10), 근접(D-13), 과도기의 포탄. 테스트와 황금 해시.
+3. **화면 (웹은 끝남):** 실험실의 키 표와 라벨(`strings.c`), 실드 그리기, 타격 이펙트, 이름 보이기, 디버그 내보내기. Windows 빌드는 아직이다.
+4. **데이터 (끝남):** `default.abproj`를 U01–U10과 새 규칙 값으로.
+5. **문서 (끝남):** `abproj.md`(키 표, 값의 종류, 예, 버전 표 1행), `unit_lab.md`("유닛 값 고치기"의 키), `AGENTS.md`(형식 설명).
+   `battle.md`는 더 이상 쓰지 않는 문서라 고치지 않는다(규칙의 기준은 위키다).
 
 ### 나중에 (이 스펙 밖)
 

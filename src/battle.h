@@ -1,7 +1,7 @@
 #pragma once
 
 // The auto-battler's rules and the project file they read (docs/specs/battle.md, "Stage A rules"; docs/specs/abproj.md,
-// "default.abproj"). Nothing here draws or reads the frame's time: the view steps the battle with battle_tick at 30 Hz and
+// "default.abproj"; docs/specs/unit_fields.md, the unit fields of the wiki's unit_stats.csv). Nothing here draws or reads the frame's time: the view steps the battle with battle_tick at 30 Hz and
 // copies what it needs into nodes and effects, so tests can run whole rounds.
 
 #include <engine/base.h>
@@ -22,11 +22,16 @@
 #define BATTLE_MAX_ROLES       32 // the roles a file may declare: one bit each in a unit's mask
 #define BATTLE_NAME_SIZE       32 // a name is at most 31 bytes
 #define BATTLE_MAX_SQUAD_SIZE  64 // units in a squad
-#define BATTLE_MAX_FOOTPRINT   4  // cells on a side of the square a squad stands on
+#define BATTLE_MAX_FOOTPRINT   8  // cells on a side of the rectangle a squad stands on
 #define BATTLE_MAX_TEAM_UNITS  2048
 #define BATTLE_MAX_UNITS       (1 + 2 * BATTLE_MAX_TEAM_UNITS) // slot 0 is "none"
 #define BATTLE_MAX_PROJECTILES 4096
 #define BATTLE_MAX_EVENTS      4096
+#define BATTLE_MAX_HITS        16 // hits_or_shots_per_attack
+
+// Until the projectile rules follow a unit's projectile keys (docs/specs/unit_fields.md, "Interim"), every projectile attack fires
+// a ballistic shell at this angle, from the middle of the unit's body.
+#define BATTLE_INTERIM_LAUNCH_ANGLE (NV_PI / 4.0f)
 
 // The newest format of the project file this build reads (docs/specs/abproj.md, "Versions").
 #define ABPROJ_VERSION 1
@@ -45,42 +50,62 @@ typedef struct BattleRules {
     f32 min_damage_fraction;     // armor never takes more than 1 minus this off a hit
 } BattleRules;
 
-// A unit's layer: ground units walk on the ground, air units fly at their `altitude`. A weapon's targets are the layers it can hit: one
-// TARGET_* bit per layer (TARGET_GROUND for UNIT_LAYER_GROUND, TARGET_AIR for UNIT_LAYER_AIR).
+// A unit's layer: ground units walk on the ground, air units fly at their `altitude_m`. A unit's targets are the layers it can hit:
+// one TARGET_* bit per layer (TARGET_GROUND for UNIT_LAYER_GROUND, TARGET_AIR for UNIT_LAYER_AIR).
 typedef enum UnitLayer { UNIT_LAYER_GROUND, UNIT_LAYER_AIR } UnitLayer;
 enum { TARGET_GROUND = 1 << UNIT_LAYER_GROUND, TARGET_AIR = 1 << UNIT_LAYER_AIR };
+// The file's `target_layer`: Ground, Air or Both.
+typedef enum TargetLayer { TARGET_LAYER_GROUND, TARGET_LAYER_AIR, TARGET_LAYER_BOTH } TargetLayer;
 
-typedef struct WeaponDef {
-    char name[BATTLE_NAME_SIZE];
-    f32 range, damage, cooldown; // meters, damage, seconds
-    f32 launch_angle;            // radians
-    f32 spread;                  // meters: the shell lands within this radius of its aim point
-    NvVec3 muzzle;               // in the unit's space: x to its right, y up, z forward (facing +Z, its right is -X)
-    u32 targets;                 // the layers it can hit (TARGET_*); a shell passes the units of the others
-} WeaponDef;
+typedef enum AttackType { ATTACK_MELEE, ATTACK_UNGUIDED, ATTACK_GUIDED } AttackType;
+typedef enum ProjectileTrajectory { TRAJECTORY_STRAIGHT, TRAJECTORY_SCRIPTED_ARC } ProjectileTrajectory;
+typedef enum GuidanceMode { GUIDANCE_NONE, GUIDANCE_PREDICTIVE_INTERCEPTION } GuidanceMode;
+typedef enum TargetLossBehavior { TARGET_LOSS_NONE, TARGET_LOSS_CONTINUE_STRAIGHT } TargetLossBehavior;
 
-typedef enum AbilityKind { ABILITY_NONE, ABILITY_SHIELD } AbilityKind;
+// A projectile attack's keys (the wiki's Projectile Spec). The round does not follow them yet but aim_point_scatter: its shells
+// are the interim ones (BATTLE_INTERIM_LAUNCH_ANGLE).
+typedef struct ProjectileDef {
+    f32 initial_speed, forward_acceleration; // m/s, m/s²
+    f32 max_speed;                           // m/s; 0 when it has none
+    f32 lifetime, max_travel;                // seconds, meters
+    f32 collision_radius, gravity_scale;     // meters, a share of the rules' gravity
+    f32 aim_point_scatter;                   // meters: the shell lands within this radius of its aim point
+    f32 launch_spread;                       // radians
+    u32 piercing_count;
+    b32 interceptable, retargeting_allowed, target_leading;
+    ProjectileTrajectory trajectory;
+    f32 arc_height; // meters, a scripted arc's
+    // Guided only.
+    f32 turn_rate;      // radians per second
+    f32 guidance_delay; // seconds
+    GuidanceMode guidance_mode;
+    TargetLossBehavior target_loss;
+} ProjectileDef;
 
-typedef struct AbilityDef {
-    AbilityKind kind;
-    union { // tagged by kind
-        struct { f32 radius, capacity, regen, regen_delay; } shield; // meters, energy, energy per second, seconds
-    };
-} AbilityDef;
-
-// A unit def is placed as a squad (docs/specs/battle.md, "Squads"): `squad_size` units on a square of `footprint` cells a side,
-// for `cost` in all. Once the round starts each unit moves and fights on its own.
+// A unit def is a row of the wiki's unit_stats.csv (docs/specs/unit_fields.md). It is placed as a squad (docs/specs/battle.md,
+// "Squads"): `squad_size` units on `footprint_w` x `footprint_d` cells, for `cost` in all. Once the round starts each unit moves
+// and fights on its own. The file's integers hp, armor, shield_hp and damage are kept as floats, as the round adds them up.
 typedef struct UnitDef {
-    char name[BATTLE_NAME_SIZE];
-    u32 cost;       // of the whole squad
-    u32 squad_size; // at least 1
-    u32 footprint;  // cells on a side, at least 1
-    f32 health, armor, speed; // speed in m/s
-    f32 radius, height;       // meters
-    f32 altitude;             // an air unit's height in the air, meters; its body is above it
+    char id[BATTLE_NAME_SIZE];   // the file's unit_id: what `place` and the editing functions name it by
+    char name[BATTLE_NAME_SIZE]; // what the panel shows
+    u32 cost;                    // of the whole squad
+    u32 squad_size;              // at least 1
+    u32 footprint_w, footprint_d; // cells along +X and +Z, at least 1
     UnitLayer layer;
-    WeaponDef weapon;
-    AbilityDef ability;
+    TargetLayer target_layer;
+    u32 targets;                 // target_layer as TARGET_* bits: a shell passes the units of the other layers
+    UnitLayer target_priority;   // with target_layer Both, the layer picked first (not followed yet)
+    f32 radius, height;          // meters
+    f32 altitude;                // an air unit's height in the air, meters; its body is above it
+    f32 hp, armor;
+    f32 shield_hp;               // 0 for none
+    f32 move_speed;              // m/s
+    f32 range, damage;           // meters, damage before armor
+    f32 attack_interval;         // seconds
+    u32 hits_per_attack;         // hits_or_shots_per_attack
+    f32 splash_radius;           // meters; 0 is one target (not followed yet)
+    AttackType attack_type;
+    ProjectileDef projectile;    // all zero for a melee attack
 } UnitDef;
 
 typedef struct StagePlace {
@@ -101,6 +126,9 @@ typedef struct BattleDefs {
     char roles[BATTLE_MAX_ROLES][BATTLE_NAME_SIZE];
     u32 role_count;
     u32 unit_roles[BATTLE_MAX_UNIT_DEFS];
+    // The keys the file gives that the round does not follow yet (docs/specs/unit_fields.md, "Interim"), in the order they first
+    // came, as "attack_type, initial_speed_mps"; empty when there are none. The loader warns of them once.
+    char unfollowed[512];
     u32 error_count;        // errors found by the reads, all of them (only the first 20 are logged)
     char first_error[160];  // "default.abproj:12: unknown key 'healt'", for the panel
 } BattleDefs;
@@ -123,19 +151,16 @@ u32 defs_rule_get(const char* text, umm size, const char* key, f64 values[BATTLE
 umm defs_rule_set(const char* text, umm size, const char* key, const f64* values, u32 count, char* out, umm capacity);
 
 // Editing a unit def in a project's text (docs/specs/unit_lab.md, "Editing the unit's values"): the text must have been read
-// without errors. `block` is where the key is: the unit's own block, its weapon's or its ability's (a shield's). A key's values
-// are as the file writes them (degrees, seconds); `muzzle` has three, every other key one.
-typedef enum DefsBlock { DEFS_BLOCK_UNIT, DEFS_BLOCK_WEAPON, DEFS_BLOCK_ABILITY } DefsBlock;
-#define DEFS_UNIT_MAX_VALUES 3
-// Reads key `key`'s values in unit `unit`'s `block`; returns how many, 0 when the file does not give the key (an optional key
-// left out) or it is not a key of that block.
-u32 defs_unit_get(const char* text, umm size, const char* unit, u32 block, const char* key, f64 values[DEFS_UNIT_MAX_VALUES]);
-// Writes the text with the key's values changed to `values` into `out` (which may not overlap `text`), as defs_rule_set does.
-// A key the block does not give yet gets a line of its own after the block's last key, at its keys' indentation. Returns the
-// new text's size, 0 when the unit, the block (a unit with no ability) or the key is not there, `count` is not its number of
-// values or the text does not fit in `capacity` bytes. The values are not checked: read the result with defs_read_project.
-umm defs_unit_set(const char* text, umm size, const char* unit, u32 block, const char* key, const f64* values, u32 count,
-                  char* out, umm capacity);
+// without errors. `unit` is its unit_id. Only the keys whose value is a number can be edited; a key's value is as the file writes
+// it (degrees, seconds).
+// Reads key `key`'s value in unit `unit`; returns 1, or 0 when the file does not give the key (an optional key left out) or it is
+// not a number key of a unit.
+u32 defs_unit_get(const char* text, umm size, const char* unit, const char* key, f64* value);
+// Writes the text with the key's value changed to `value` into `out` (which may not overlap `text`), as defs_rule_set does. A
+// key the unit does not give yet gets a line of its own after the unit's last key, at its keys' indentation. Returns the new
+// text's size, 0 when the unit or the key is not there or the text does not fit in `capacity` bytes. The value is not checked:
+// read the result with defs_read_project.
+umm defs_unit_set(const char* text, umm size, const char* unit, const char* key, f64 value, char* out, umm capacity);
 
 // Seconds as whole ticks, rounded up (with room for float error, so 1.5 s is 45 ticks and not 46); at least 1.
 u32 battle_seconds_to_ticks(f32 seconds);
@@ -143,10 +168,13 @@ u32 battle_seconds_to_ticks(f32 seconds);
 // The first row of the enemy's zone.
 u32 battle_enemy_first_row(const BattleRules* rules);
 
-// The columns of the grid a squad of `squad_size` units stands in on its footprint: the fewest whose square holds them all (so
-// there are never more rows than columns, and units side by side in a row are the nearest). They are footprint * cell_size /
-// columns meters apart.
-u32 battle_squad_columns(u32 squad_size);
+// The grid a squad of `squad_size` units stands in on a footprint of `w` x `d` cells (the wiki's D-07): as near square as the
+// footprint's shape lets it, columns = ceil(sqrt(squad_size * w / d)) and rows = ceil(squad_size / columns). Its units are
+// min(w / columns, d / rows) * cell_size meters apart.
+typedef struct SquadGrid {
+    u32 columns, rows;
+} SquadGrid;
+SquadGrid battle_squad_grid(u32 squad_size, u32 w, u32 d);
 
 // The simulation.
 
@@ -170,23 +198,22 @@ typedef struct Unit {
     f32 damage_taken; // this tick; applied at the tick's end
     UnitId target;
     u32 cooldown_ticks; // until the weapon can fire
-    union { // tagged by UnitDef.ability.kind
-        struct { f32 energy; u32 since_hit_ticks; } shield;
-    } ability;
+    f32 shield;         // shield HP left: it takes a whole hit before the health does (D-05) and does not refill (D-10)
 } Unit;
 
 typedef struct Projectile { // a shell
     u8 team;
     UnitId shooter;
     NvVec3 position, previous_position, velocity;
-    f32 damage; // before armor; a shield that takes only part of it leaves the rest
-    u32 targets; // the layers the shooter's weapon can hit: the shell passes the units and shields of the others
+    f32 damage;  // before armor
+    u32 targets; // the layers the shooter can hit: the shell passes the units of the others
 } Projectile;
 
 typedef enum BattleEventKind {
-    BATTLE_EVENT_FIRE,       // position: the muzzle, direction: where the shell goes
-    BATTLE_EVENT_HIT,        // a shell hurt a unit: position: where, size: the damage after armor
-    BATTLE_EVENT_SHIELD_HIT, // a shield took a shell: position: where it crossed, size: the energy it took
+    BATTLE_EVENT_FIRE,       // position: where the shell starts, direction: where it goes
+    BATTLE_EVENT_STRIKE,     // a melee attack: position: the target's middle, direction: from the attacker to it
+    BATTLE_EVENT_HIT,        // a shell or a strike hurt a unit: position: where, size: the damage after armor
+    BATTLE_EVENT_SHIELD_HIT, // a unit's shield took a hit: position: where, size: the shield HP it took
     BATTLE_EVENT_DEATH,      // position: where the unit died
 } BattleEventKind;
 
@@ -262,7 +289,7 @@ void battle_tick(Battle* battle);
 void battle_seek(Battle* battle, u32 tick);
 
 u32 battle_alive_count(const Battle* battle, u32 team);
-// The sum over a team's living units of cost / squad size * health / max health.
+// The sum over a team's living units of cost / squad size * health / hp.
 f32 battle_remaining_value(const Battle* battle, u32 team);
 // FNV-1a over the state a round's outcome depends on, so two runs can be compared.
 u32 battle_hash(const Battle* battle);

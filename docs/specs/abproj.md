@@ -5,7 +5,7 @@
 
 ## 한국어
 
-상태: 구현됨 (2026-10-05). 분대(`squad`, `footprint`)를 더함 (2026-10-11). 형식은 개발 중이라 버전 1 그대로다. 이 스펙의 변경은 먼저 합의한다.
+상태: 구현됨 (2026-10-05). 분대(`squad`, `footprint`)를 더함 (2026-10-11). 유닛 블록이 위키의 `unit_stats.csv` 필드를 따른다(2026-11-06, `unit_fields.md`). 형식은 개발 중이라 버전 1 그대로다. 이 스펙의 변경은 먼저 합의한다.
 
 ### 목표
 
@@ -32,15 +32,18 @@
 - UTF-8 텍스트, 줄 끝은 LF나 CRLF.
 - 한 줄에 문장 하나: 키 하나와 그 값들을 스페이스로 나눈다. 빈 줄은 무시한다.
 - `#`부터 줄 끝까지는 주석이다.
-- **들여쓰기가 중첩을 정한다.** 블록을 여는 문장(`rules`, `roles`, `unit`, `weapon`, `ability`, `stage`) 다음에 더 깊게 들여 쓴 줄들이 그
+- **들여쓰기가 중첩을 정한다.** 블록을 여는 문장(`rules`, `roles`, `unit`, `stage`) 다음에 더 깊게 들여 쓴 줄들이 그
   블록에 속한다. 같은 블록의 줄은 들여쓰기가 같아야 한다. 들여쓰기는 스페이스만 쓴다(탭은 오류).
 - 값의 종류:
   - **수:** 10진수, 부호와 소수점 가능(`120`, `0.5`, `-3`). 지수 표기는 없다. 정수 자리에 소수가 오면 오류다.
-  - **이름:** `[A-Za-z_][A-Za-z0-9_]*`, 31바이트까지(`Crawler`).
-  - **낱말:** 키마다 정해진 목록 중 하나(`shield`).
+  - **이름:** `[A-Za-z_][A-Za-z0-9_]*`, 31바이트까지(`U01`).
+  - **낱말(열거형):** 키마다 정해진 목록 중 하나이고 대소문자를 가린다(`Ground`, `UnguidedProjectile`).
+  - **불리언:** `true` 또는 `false`.
+  - **글:** 키 뒤에서 주석 앞까지의 나머지 줄, 안의 공백까지, 1–31바이트(`name Scout Swarm`).
+  - **목록:** 쉼표로 나눈 글(`roles Chaff/Screen, Flanker`).
 - 각도는 파일에서 도(degree)이고 읽을 때 라디안으로 바꾼다. 거리는 m, 시간은 초(읽을 때 틱으로 바꾼다, "규칙" 절).
 - 다음은 오류다: 모르는 키, 블록 밖에 온 블록 안 키, 같은 블록 안에서 두 번 나온 키, 빠진 필수 키, 값 개수가 틀린 줄, 범위를
-  벗어난 값, 탭, 같은 이름의 유닛 두 개, 정해진 자리가 아닌 곳의 최상위 문장.
+  벗어난 값, 탭, 같은 `unit_id`의 유닛 두 개, 정해진 자리가 아닌 곳의 최상위 문장.
 - **최상위 문장의 순서가 정해져 있다.** 최상위 문장은 들여쓰지 않은 문장(`abproj_version`, `rules`, `unit`, `stage`)이고,
   이 순서로 온다: `abproj_version` → `rules` → `roles`(선택) → `unit` 하나 이상 → `stage`. 순서가 정해져 있으면 한 번 훑어 읽을 수 있고(유닛을
   읽을 때 규칙이, 스테이지를 읽을 때 유닛이 이미 있다), 에디터가 쓰는 파일도 모양이 하나로 정해진다. 자리가 아닌 곳의 문장은
@@ -54,7 +57,7 @@
 | `abproj_version <정수>` | 정확히 하나, 첫 문장 | 형식 버전("버전" 절). 지금은 `1` |
 | `rules` | 블록, 정확히 하나 | 규칙 상수 |
 | `roles` | 블록, 선택, 하나까지 | 유닛이 가질 수 있는 역할의 이름(사람이 분류하려고 쓴다) |
-| `unit <이름>` | 블록, 하나 이상, 최대 16 | 유닛 정의 |
+| `unit <unit_id>` | 블록, 하나 이상, 최대 16 | 유닛 정의(위키 `unit_stats.csv`의 한 행) |
 | `stage` | 블록, 정확히 하나 | 공급, 시드, 적 배치 |
 
 #### `rules`
@@ -84,67 +87,57 @@
 - **용량:** 배열 크기를 정하는 값(`BATTLE_MAX_UNIT_DEFS`, `BATTLE_MAX_PROJECTILES`, `BATTLE_MAX_EVENTS`, 이름 길이)은 매크로로
   남는다. 격자 크기가 데이터가 되었으므로 그 상한도 매크로다: `BATTLE_MAX_GRID_WIDTH 64`, `BATTLE_MAX_GRID_LENGTH 128`,
   `BATTLE_MAX_ZONE_ROWS 32`, `BATTLE_MAX_PLACES (BATTLE_MAX_ZONE_ROWS * BATTLE_MAX_GRID_WIDTH)`. 위 표의 범위는 이 상한에서
-  나온다. 분대의 상한도 매크로다: `BATTLE_MAX_SQUAD_SIZE 64`, `BATTLE_MAX_FOOTPRINT 4`, 그리고 한 편의 유닛 수
+  나온다. 분대의 상한도 매크로다: `BATTLE_MAX_SQUAD_SIZE 64`, `BATTLE_MAX_FOOTPRINT 8`, 그리고 한 편의 유닛 수
   `BATTLE_MAX_TEAM_UNITS 2048`.
 
 #### `roles`
 
 선택. 유닛이 가질 수 있는 **역할 태그**를 선언한다. 사람이 유닛을 분류하려고 다는 것이고, 규칙(`battle.c`)은 읽지 않는다. 그래서 역할은
-라운드를 바꾸지 않는다. 한 줄에 이름 하나(`[A-Za-z_][A-Za-z0-9_]*`, 31바이트까지)이고, 최대 32개다. 주석으로 뜻을 적는다.
+라운드를 바꾸지 않는다. 한 줄에 역할 하나이고, 이름은 그 줄 전체의 글이다(공백 가능, 쉼표는 안 됨, 31바이트까지: `Chaff Clear`,
+`Support(future)`). 최대 32개다. 주석으로 뜻을 적는다. 유닛의 `roles`는 선언한 역할을 쉼표로 나눠 적는다(`roles Chaff/Screen, Flanker`).
 
 | 오류 | 예 |
 |---|---|
-| 한 줄에 이름 하나 | `a role line takes one name` |
+| 이름에 쉼표, 31바이트 넘음 | `a role's name cannot hold ','`, `a role's name is longer than 31 bytes` |
 | 같은 이름을 두 번 선언 | `role 'frontline' is declared twice` |
 | 32개를 넘음 | `too many roles (at most 32)` |
 | 두 번 나옴, 값이 없음 | `'roles' is given twice`, `'roles' takes no value` |
 | 자리가 틀림(`rules` 앞, 유닛 뒤) | `'roles' must come after 'rules' and before the units` |
 
-#### `unit <이름>`
+#### `unit <unit_id>`
 
-| 키 | 값 | 필수 | 범위, 기본값 |
-|---|---|---|---|
-| `unit <이름>` | 블록 | 하나 이상, 최대 16 | 이름은 파일 안에서 하나뿐 |
-| ├ `cost` | 정수, 분대 전체 | 예 | 1–10000 |
-| ├ `squad` | 정수, 분대의 유닛 수 | 아니오 | 1–64, 기본 1 |
-| ├ `footprint` | 정수, 분대가 차지하는 정사각형의 한 변(칸) | 아니오 | 1–4, 기본 1. 구역의 행 수와 너비 이하 |
-| ├ `health` | 수 | 예 | > 0 |
-| ├ `armor` | 수 | 아니오 | ≥ 0, 기본 0 |
-| ├ `speed` | 수, m/s | 예 | ≥ 0 |
-| ├ `radius` | 수, m | 예 | > 0 |
-| ├ `height` | 수, m | 예 | > 0 |
-| ├ `roles` | 이름, 여럿 가능 | 아니오 | `roles` 블록에 선언한 이름. 한 줄에 여럿, 같은 이름 두 번은 오류(`unknown role 'x' (declare it under 'roles')`) |
-| ├ `layer` | 낱말: `ground`, `air` | 아니오 | 기본 `ground`. `air`는 공중 유닛(`altitude` 높이로 난다) |
-| ├ `altitude` | 수, m | 공중이면 예, 지상이면 금지 | > 0. 공중 유닛이 나는 높이 |
-| ├ `weapon <이름>` | 블록 | 예, 정확히 하나 | |
-| │ ├ `range` | 수, m | 예 | > 0 |
-| │ ├ `damage` | 수 | 예 | ≥ 0 |
-| │ ├ `cooldown` | 수, 초 | 예 | > 0 |
-| │ ├ `launch_angle` | 수, 도 | 예 | 0 초과 90 미만 |
-| │ ├ `spread` | 수, m | 아니오 | ≥ 0, 기본 0 |
-| │ ├ `targets` | 낱말: `ground`, `air`(한 줄에 둘 다 가능) | 아니오 | 칠 수 있는 레이어. 기본 `ground` |
-| │ └ `muzzle` | 수 셋(x y z), m, 유닛 공간 | 아니오 | 기본 0 0 0 |
-| └ `ability <종류>` | 블록 | 아니오, 하나까지 | 종류: `shield` |
-| &nbsp;&nbsp; ├ `radius` | 수, m | 예 | > 0 |
-| &nbsp;&nbsp; ├ `capacity` | 수 | 예 | > 0 |
-| &nbsp;&nbsp; ├ `regen` | 수, 초당 | 예 | ≥ 0 |
-| &nbsp;&nbsp; └ `regen_delay` | 수, 초 | 예 | ≥ 0 |
+유닛 블록은 위키 [유닛 수치](https://github.com/chromedays/autobattler/wiki/Unit‐Stats)의 `unit_stats.csv` 한 행이다
+(`docs/specs/unit_fields.md`). 키는 CSV 열 이름 그대로이고 값의 표기도 CSV 그대로다: CSV의 빈칸이 아닌 칸마다 한 줄, 빈칸은 줄이 없다.
+블록의 이름은 `unit_id`다. 키마다의 값, 필수, 범위, 기본값과 서로 기대는 검사(위키의 로드 시 검증)는 `unit_fields.md`의 "키"와 "읽을 때의
+검사"가 정한다. 여기서는 되풀이하지 않는다. 묶음만 적으면:
 
-- 유닛 정의는 **분대**로 놓인다(`battle.md`의 "분대"): 한 번 놓으면 `footprint` × `footprint` 칸에 `squad`개의 유닛이 서고, 값은
-  `cost`다. 체력, 무기, 능력 같은 나머지 키는 분대의 유닛 하나하나의 것이다. 두 키가 없으면 한 칸에 유닛 하나다.
-- `footprint`가 구역의 행 수나 격자 너비보다 크면 `footprint` 줄에 `'footprint' must be at most 14 (a zone's rows and width)`. 규칙에
-  오류가 있으면 따지지 않는다.
-- 분대의 유닛은 놓일 때 서로 겹치면 안 된다. 같은 행에 나란히 선 유닛이 가장 가깝고(행이 열보다 많지 않다), 그 간격은
-  `footprint × cell_size / 열 수`(열 수는 그 제곱이 유닛 수 이상인 가장 작은 수)다. 이 간격이 유닛의 폭(`2 × radius`)보다 작으면
-  `squad` 줄에 `16 units on 1x1 cells stand 0.5 m apart, under their width (1 m)`. 맞닿는 것(간격 = 폭)은 된다. 규칙이나 그 유닛에
+| 묶음 | 키 |
+|---|---|
+| 언제나 필수 | `name`, `cost`, `squad_size`, `unit_layer`, `target_layer`, `footprint_w`, `footprint_d`, `radius_m`, `height_m`, `hp`, `armor`, `move_speed`, `range`, `damage`, `attack_interval`, `hits_or_shots_per_attack`, `splash_radius`, `attack_type` |
+| 조건부 | `altitude_m`(`unit_layer Air`면 필수, `Ground`면 오류), `target_priority`(`target_layer Both`일 때만) |
+| 선택 | `roles`, `shield_hp` |
+| 투사체(`attack_type`이 `Melee`면 오류) | 필수: `initial_speed_mps`, `forward_acceleration_mps2`, `lifetime_s`, `max_travel_m`, `collision_radius_m`, `trajectory_mode`, `target_leading`. 선택: `max_speed_mps`, `gravity_scale`, `aim_point_scatter_m`, `launch_spread_deg`, `piercing_count`, `interceptable`, `retargeting_allowed`. `arc_height_m`은 `ScriptedArc`면 필수, `Straight`면 오류 |
+| 유도 | `GuidedProjectile`이면 필수: `turn_rate_deg_s`, `guidance_delay_s`, `guidance_mode`. 선택: `target_loss_behavior` |
+
+- 유닛 정의는 **분대**로 놓인다(`battle.md`의 "분대"): 한 번 놓으면 `footprint_w` × `footprint_d` 칸(+X로 w, 행 쪽으로 d)에 `squad_size`개의
+  유닛이 서고, 값은 `cost`다. 나머지 키는 분대의 유닛 하나하나의 것이다.
+- `footprint_w`가 격자 너비보다 크면 그 줄에 `'footprint_w' must be at most 32 (the grid's width)`, `footprint_d`가 구역의 행 수보다 크면
+  `'footprint_d' must be at most 14 (a zone's rows)`. 규칙에 오류가 있으면 따지지 않는다.
+- 분대의 유닛은 놓일 때 서로 겹치면 안 된다. 격자는 위키의 D-07이다: 칸 수가 w × d인 footprint의 미터 크기를 W, D라 하면 열은
+  `ceil(sqrt(squad_size × W / D))`(1–`squad_size`), 행은 유닛 수를 열로 나눈 올림, 간격은 `min(W / 열, D / 행)`(`battle_squad_grid`). 돌리지 않은
+  방향과 W, D를 바꾼 방향 모두에서 간격이 유닛의 폭(`2 × radius_m`)보다 작으면 `squad_size` 줄에 `24 units on 5x2 cells stand 1 m apart when
+  turned, under their width (1.1 m)`. 맞닿는 것(간격 = 폭)은 된다. 하나뿐인 분대도 같다(footprint의 짧은 변이 폭 이상). 규칙이나 그 유닛에
   다른 오류가 있으면 따지지 않는다(실수 하나가 오류 하나).
+- 라운드가 아직 따르지 않는 키(`unit_fields.md`의 "과도기")는 읽고 검사하고 담는다. 읽기는 그 키 이름을 `BattleDefs.unfollowed`에 적고,
+  프로젝트를 불러올 때(`game_load_project`) 경고 한 줄이 남는다.
 
 #### 레이어
 
-- 유닛은 **지상**(`ground`, 기본)이나 **공중**(`air`)이다. 공중 유닛은 `altitude` 높이로 날고 `altitude`가 필요하다. 지상 유닛에 `altitude`를
-  두면 오류다(`'altitude' is only for air units`). 공중 유닛의 몸은 그 높이에서 위로 `height`만큼이다.
-- 무기의 `targets`는 칠 수 있는 레이어다(`ground`, `air`, 또는 둘). 기본은 `ground`다. 목표는 이 레이어의 적 중에서 고르고, 포탄은 칠 수 없는
-  레이어의 유닛과 그 실드를 **지나간다**. 대공 무기(`targets air`)는 공중 적의 몸 가운데를 겨눈다.
+- 유닛은 **지상**(`unit_layer Ground`)이나 **공중**(`unit_layer Air`)이다. 공중 유닛은 `altitude_m` 높이로 날고 `altitude_m`이 필요하다(`unit 'U06'
+  flies (unit_layer Air) and needs 'altitude_m'`). 지상 유닛에 `altitude_m`을 두면 오류다(`'altitude_m' is only for air units`). 공중 유닛의 몸은
+  그 높이에서 위로 `height_m`만큼이다.
+- `target_layer`는 칠 수 있는 레이어다(`Ground`, `Air`, `Both`). 목표는 이 레이어의 적 중에서 고르고, 포탄은 칠 수 없는 레이어의 유닛을
+  **지나간다**. 공중을 칠 때는 공중 적의 몸 가운데를 겨눈다. `target_priority`(`Both`일 때 먼저 고를 레이어)는 읽지만 아직 따르지 않는다.
 - 서로 다른 레이어의 유닛은 서로 밀어내지 않는다(공중 유닛은 지상 유닛 위를 지나도 된다).
 - 레이어는 라운드를 바꾼다. 역할(`roles`)은 바꾸지 않는다.
 
@@ -154,64 +147,106 @@
 |---|---|---|---|
 | `supply <정수>` | 양쪽의 공급 | 예, 한 번 | 1–100000 |
 | `seed <정수>` | 난수 시드(퍼짐). 같은 배치는 같은 결과 | 아니요, 한 번 | 0–4294967295, 기본 1 |
-| `place <유닛 이름> <칸 x> <칸 행>` | 적 분대 하나. 칸은 footprint에서 원점에 가장 가까운 모서리 칸 | 하나 이상 | 이름은 위의 `unit` 중 하나. footprint 전체가 적 구역 안(x 0–(너비 − footprint), 행은 적 구역의 첫 행부터 (길이 − footprint)까지). footprint끼리 겹치지 않는다. 비용 합 ≤ `supply`, 유닛 수 합 ≤ 2048 |
+| `place <unit_id> <칸 x> <칸 행>` | 적 분대 하나. 칸은 footprint에서 원점에 가장 가까운 모서리 칸 | 하나 이상 | 위의 `unit` 중 하나. footprint 전체가 적 구역 안(x 0–(너비 − `footprint_w`), 행은 적 구역의 첫 행부터 (길이 − `footprint_d`)까지). footprint끼리 겹치지 않는다. 비용 합 ≤ `supply`, 유닛 수 합 ≤ 2048 |
 
 `place`의 행은 전장 전체의 행 번호다(`grid 32 48`, `zone_rows 14`이면 34–47). 범위는 `rules`에서 계산한다. `rules`에 오류가 있으면
 칸을 따질 격자를 모르므로 `place`의 칸 검사는 하지 않는다(틀린 격자 때문에 맞는 줄이 오류가 되지 않게). 이름과 수의 검사는 한다.
 
 ### 예
 
-`data/default.abproj`. 규칙은 전에 코드에 있던 값이다. Crawler는 2 × 2칸에 여섯인 분대다(분대의 유닛 수가 칸 수와 같을 필요는 없다).
+`data/default.abproj`의 앞부분. 규칙의 격자와 라운드 시간은 위키의 D-17, D-24다. 유닛은 위키의 U01–U10이고, 아래는 그중 근접 유닛 하나와
+실드가 있는 투사체 유닛 하나다.
 
 ```
-# data/default.abproj: the auto-battler's rules, units and stage (docs/specs/abproj.md)
+# autobattler/data/default.abproj: the auto-battler's rules, units and stage (docs/specs/abproj.md). The units are the wiki's
+# unit_stats.csv (docs/specs/unit_fields.md): one line per cell of a row, none for an empty cell.
 abproj_version 1
 
 rules
     cell_size 2              # m
-    grid 32 48               # cells across, rows long
+    grid 32 68               # cells across, rows long (the wiki's D-17)
     zone_rows 14             # each side's deployment rows
-    round_time 60            # s
+    round_time 90            # s (the wiki's D-24)
     gravity 9.8              # m/s²
     retarget_interval 0.25   # s
-    stop_fraction 0.9        # of the weapon's range
+    stop_fraction 0.9        # of the range
     min_damage_fraction 0.25 # armor never takes more than 75% of a hit
 
-unit Crawler
-    cost 100           # the whole squad
-    squad 6            # units
-    footprint 2        # cells on a side
-    health 120
-    armor 5
-    speed 5            # m/s
-    radius 0.5
-    height 0.8
-    weapon Lobber
-        range 20
-        damage 30
-        cooldown 1.5
-        launch_angle 45    # degrees
-        spread 0.5
-        muzzle 0 0.6 0.3
-    ability shield
-        radius 1.2
-        capacity 60
-        regen 10           # per second
-        regen_delay 3
+roles
+    Chaff/Screen
+    Flanker
+    Tank/Anchor
+    Support(future)
+    # ... the roster's other roles
+
+unit U01
+    name Scout Swarm
+    cost 50
+    squad_size 24
+    roles Chaff/Screen, Flanker
+    unit_layer Ground
+    target_layer Ground
+    footprint_w 5
+    footprint_d 2
+    radius_m 0.5
+    height_m 0.8
+    hp 45
+    armor 0
+    move_speed 15
+    range 6
+    damage 7
+    attack_interval 0.7
+    hits_or_shots_per_attack 1
+    splash_radius 0
+    attack_type Melee
+
+unit U04
+    name Shield Guard
+    cost 150
+    squad_size 1
+    roles Tank/Anchor, Support(future)
+    unit_layer Ground
+    target_layer Ground
+    footprint_w 3
+    footprint_d 3
+    radius_m 2.0
+    height_m 3.5
+    hp 2000
+    armor 20
+    shield_hp 500
+    move_speed 5
+    range 12
+    damage 50
+    attack_interval 1.5
+    hits_or_shots_per_attack 1
+    splash_radius 0
+    attack_type UnguidedProjectile
+    initial_speed_mps 80
+    forward_acceleration_mps2 0
+    lifetime_s 0.5
+    max_travel_m 25
+    collision_radius_m 0.15
+    gravity_scale 0
+    aim_point_scatter_m 0
+    launch_spread_deg 0
+    piercing_count 0
+    interceptable false
+    trajectory_mode Straight
+    target_leading true
+
+# ... U02, U03 and U05 to U10
 
 stage
     supply 1000
     seed 1
-    place Crawler 12 36
-    place Crawler 14 36
-    place Crawler 16 36
-    place Crawler 18 36
-    place Crawler 13 38
-    place Crawler 15 38
-    place Crawler 17 38
-    place Crawler 14 40
-    place Crawler 16 40
-    place Crawler 15 42
+    place U01 0 54
+    place U01 26 54
+    place U01 8 60
+    place U02 6 54
+    place U02 20 54
+    place U04 14 54
+    place U03 10 57
+    place U10 14 60
 ```
 
 ### 버전
@@ -229,7 +264,7 @@ stage
 
 | 버전 | 바뀐 것 | 옛 파일 읽기 |
 |---|---|---|
-| 1 | 첫 형식. 개발 중이라 버전을 올리지 않고 바뀐 것을 여기 적는다. 유닛의 `squad`, `footprint`(분대; `place`의 칸은 footprint의 모서리). 둘 다 없으면 한 칸에 유닛 하나. `roles` 블록과 유닛의 `roles`(역할 태그), `layer`, `altitude`, 무기의 `targets`(레이어) | — |
+| 1 | 첫 형식. 개발 중이라 버전을 올리지 않고 바뀐 것을 여기 적는다. 유닛의 `squad`, `footprint`(분대; `place`의 칸은 footprint의 모서리). 둘 다 없으면 한 칸에 유닛 하나. `roles` 블록과 유닛의 `roles`(역할 태그), `layer`, `altitude`, 무기의 `targets`(레이어). 유닛 블록이 위키 `unit_stats.csv`의 필드가 됨(2026-11-06, `unit_fields.md`): 키는 CSV 열 이름, 블록은 평평하고(`weapon`, `ability` 블록 없음) 이름은 `unit_id`, 값의 종류에 글, 목록, 불리언을 더함, 역할 이름은 글. 옛 키(`squad`, `footprint`, `health`, `speed`, `layer`, `targets`, `cooldown`, `launch_angle`, `spread`, `muzzle`, 실드 블록)는 없어졌다 | 옛 파일은 읽히지 않는다(개발 중) |
 
 ### 읽기와 오류
 
@@ -307,7 +342,7 @@ stage
   (footprint가 구역 밖이거나 공급을 넘는 분대는 빠진다). 전장 평면은 새로 맞추고, 카메라는 전장 크기가 바뀔 때만 처음 자리로 간다(`view_apply_rules`).
   유닛 메시는 그대로다. 놓인 프로젝트 수(`project_loads`)는 늘지 않는다.
 - **나쁘면 아무것도 바꾸지 않는다:** "Not changed: <첫 오류>"를 빨강으로 보인다. 예: `zone_rows`가 격자 길이의 반을 넘음, 격자를 줄여
-  스테이지의 `place`가 적 구역 밖으로 나감, `zone_rows`를 어느 유닛의 `footprint`보다 작게 함, `cell_size`를 줄여 분대의 유닛이 겹침. 다음에 받아들여진 고침이 이 알림을 지운다.
+  스테이지의 `place`가 적 구역 밖으로 나감, `zone_rows`를 어느 유닛의 `footprint_d`보다 작게 함, `cell_size`를 줄여 분대의 유닛이 겹침. 다음에 받아들여진 고침이 이 알림을 지운다.
 - **배치 단계에서만:** 라운드가 시작되면 위젯이 꺼진다("Rules change only in deployment"). 되감기(`battle_seek`)는 라운드를 처음부터 다시
   돌리므로, 규칙이 라운드 중에 바뀌면 그 라운드를 재현할 수 없다. 로컬 파일을 읽거나 쓰는 중에도 꺼진다(저장이 보낸 글과 "저장됨"
   표시가 맞도록).
@@ -330,13 +365,15 @@ stage
   아닌 `unit`, `stage`, `rules`, 두 번째 `stage`), 파일 전체의 모자람, 시간의 틱 변환(0.25 → 8, 60 → 1800, 0.01 → 1).
 - 규칙을 바꾼 장면: 다른 격자와 칸 크기(칸 중심, 구역 밖, 전장 가장자리), 짧은 `round_time`에서 그 틱에 끝난다, `retarget_interval`,
   `stop_fraction`, `gravity`(포탄이 어느 중력에서도 목표점에 떨어지고 약하면 오래 난다), `min_damage_fraction` 0과 1.
-- 레이어: 기본값(지상, `ground`), `layer air`와 `altitude`, 공중인데 `altitude` 없음, 지상인데 `altitude`, `altitude 0`, 모르는 낱말, 두 번 나옴, 빈 값, `targets`의 낱말(둘, 모름, 두 번, 빈 값), 유닛 블록의 `targets`는 모르는 키.
-- 역할: `roles` 블록의 오류(줄 하나에 이름 하나, 두 번 선언, 32개 초과, 자리)와 유닛의 `roles` 오류(선언되지 않은 역할, 두 번, 빈 줄)가 맞는 줄에 나온다. 마스크는 선언 순서의 비트다. 역할을 더해도 시드 1의 라운드 해시가 같다.
-- 분대: `squad`와 `footprint`를 읽고 없으면 1, 범위(0, 상한 초과, 정수 아님, 두 번), 구역보다 큰
+- 레이어: `unit_layer Air`와 `altitude_m`, 공중인데 `altitude_m` 없음, 지상인데 `altitude_m`, `altitude_m 0`, 모르는 낱말(대소문자), 두 번 나옴, 빈 값, `target_layer`의 낱말(`Both`, 모름, 값 둘, 빈 값).
+- 유닛 필드(`unit_fields.md`의 "테스트"): 열마다의 빠짐, 범위, 정수, 기본값, 새 값의 종류(글, 낱말, 불리언), 위키의 로드 시 검증 표의 줄마다 한 장면, 위키의 열 유닛이 읽히고 아직 따르지 않는 키가 적힌다, D-07 격자와 두 방향의 간격, 직사각형 배치, 실드 HP, 근접.
+- 역할: `roles` 블록의 오류(이름의 쉼표, 31바이트 넘음, 두 번 선언, 32개 초과, 자리)와 유닛의 `roles` 오류(선언되지 않은 역할, 두 번, 빈 항목, 빈 줄)가 맞는 줄에 나온다. 공백이 든 이름과 쉼표 주위의 공백. 마스크는 선언 순서의 비트다. 역할을 바꿔도 시드 1의 라운드 해시가 같다.
+- 분대: `squad_size`, `footprint_w`, `footprint_d`의 범위(0, 상한 초과, 정수 아님, 두 번), 구역보다 깊거나 격자보다 넓은
   footprint와 그렇게 줄이는 규칙 고치기의 거절, 겹치는 분대(맞닿음은 된다, 다른 오류가 있으면 더하지 않는다, `cell_size`를 줄이는 고침의 거절), `place`의 footprint가 적 구역 안(x와 행의 끝), 겹침, 모르는 유닛의 칸, 분대 단위 공급, 적
   유닛 2048 초과.
-- **황금 해시:** `full_project`로 시드 1–4의 라운드를 돌린 틱 수, 결과, 300틱의 해시, 끝의 해시, 남은 적 수가 규칙을 코드에서 파일로 옮기기
-  전의 값과 같다. 규칙의 계산을 바꿔서 라운드가 달라졌다면 이 값이 바뀌는 것이 맞고, 그때 일부러 고친다.
+- **황금 해시:** `full_project`(위키의 유닛으로 바꿨을 때의 `default.abproj` 사본)로 시드 1–4의 라운드를 돌린 틱 수, 결과, 300틱의 해시,
+  끝의 해시, 남은 적 수. 유닛이 위키의 것으로 바뀐 때(2026-11-06) 다시 기록했다. 규칙의 계산을 바꿔서 라운드가 달라졌다면 이 값이 바뀌는
+  것이 맞고, 그때 일부러 고친다.
 
 ### 단계
 
@@ -351,9 +388,8 @@ stage
 - **별도 리포:** `default.abproj`를 데이터 리포로 옮기고 엔진 리포가 서브모듈로 고정한다. 버전 줄이 둘의 호환을 확인한다.
 - **스테이지 여러 개:** `stage`에 이름을 붙이고(`stage <이름>`) 여럿을 허용한다. 스테이지마다 전장 크기가 달라지면 `grid`를 `stage`로
   옮긴다. 버전을 올린다.
-- **B의 키:** 유닛의 `size`, 여러 `weapon` 블록과 무기의 `projectile`, `targets`,
-  `min_range`, `splash`, `speed`, `turn_rate`, `ability jump`, 스테이지의 `prop`이 같은 문법으로 더해진다. 모르는 키는 여전히 오류다.
-  더할 때마다 버전을 올린다.
+- **유닛의 키:** 위키의 열이 더해지거나 바뀌면 같은 이름으로 따라간다(`unit_fields.md`의 "나중에"). 스테이지의 `prop` 같은 키도 같은
+  문법으로 더해진다. 모르는 키는 여전히 오류다.
 - **이펙트, 유닛 외형:** 지금은 `battle_view.c`의 코드다. 디자이너가 다뤄야 하면 블록으로 더한다.
 
 ### 열린 질문
@@ -365,7 +401,7 @@ stage
 
 ## English
 
-Status: built (2026-10-05). Squads (`squad`, `footprint`) added (2026-10-11); the format stays at version 1 while it is in development. Changes to this spec are agreed first.
+Status: built (2026-10-05). Squads (`squad`, `footprint`) added (2026-10-11). The unit block follows the fields of the wiki's `unit_stats.csv` (2026-11-06, `unit_fields.md`). The format stays at version 1 while it is in development. Changes to this spec are agreed first.
 
 ### Goal
 
@@ -392,17 +428,20 @@ outside this spec; see "Later").
 - UTF-8 text, LF or CRLF line ends.
 - One statement per line: a key and its values, separated by spaces. Blank lines are ignored.
 - `#` starts a comment that runs to the end of the line.
-- **Indentation sets nesting.** Lines indented deeper after a statement that opens a block (`rules`, `unit`, `weapon`, `ability`,
-  `stage`) belong to that block. Lines of one block have the same indentation. Indentation is spaces only (a tab is an error).
+- **Indentation sets nesting.** Lines indented deeper after a statement that opens a block (`rules`, `roles`, `unit`, `stage`)
+  belong to that block. Lines of one block have the same indentation. Indentation is spaces only (a tab is an error).
 - Kinds of values:
   - **Number:** decimal, with an optional sign and point (`120`, `0.5`, `-3`). No exponents. A fraction where an integer goes is
     an error.
-  - **Name:** `[A-Za-z_][A-Za-z0-9_]*`, up to 31 bytes (`Crawler`).
-  - **Word:** one of a list fixed per key (`shield`).
+  - **Name:** `[A-Za-z_][A-Za-z0-9_]*`, up to 31 bytes (`U01`).
+  - **Word (enum):** one of a list fixed per key, case counting (`Ground`, `UnguidedProjectile`).
+  - **Boolean:** `true` or `false`.
+  - **Text:** the rest of the line after the key up to a comment, spaces and all, 1 to 31 bytes (`name Scout Swarm`).
+  - **List:** texts separated by commas (`roles Chaff/Screen, Flanker`).
 - Angles are degrees in the file and become radians when read. Distances are meters, times seconds (they become ticks when read; see
   "Rules").
 - These are errors: an unknown key, a block's key outside its block, a key twice in one block, a missing required key, a line with
-  the wrong number of values, a value out of range, a tab, two units with the same name, a top-level statement out of its place.
+  the wrong number of values, a value out of range, a tab, two units with the same `unit_id`, a top-level statement out of its place.
 - **Top-level statements come in a fixed order.** Top-level statements are the unindented ones (`abproj_version`, `rules`,
   `unit`, `stage`), and they come in this order: `abproj_version` → `rules` → `roles` (optional) → one or more `unit` → `stage`. A fixed order lets one
   pass read the file (the rules are there when units are read, the units when the stage is) and gives the files an editor writes one
@@ -416,7 +455,7 @@ outside this spec; see "Later").
 | `abproj_version <integer>` | Exactly one, the first statement | The format version ("Versions"). Now `1` |
 | `rules` | Block, exactly one | Rule constants |
 | `roles` | Block, optional, at most one | The names of the roles a unit may carry (for sorting units by people) |
-| `unit <name>` | Block, one or more, at most 16 | A unit definition |
+| `unit <unit_id>` | Block, one or more, at most 16 | A unit definition (a row of the wiki's `unit_stats.csv`) |
 | `stage` | Block, exactly one | Supply, seed, the enemy deployment |
 
 #### `rules`
@@ -446,68 +485,61 @@ Every key is required. No defaults live in code, so the rules' values are only i
 - **Capacities:** the values that size arrays (`BATTLE_MAX_UNIT_DEFS`, `BATTLE_MAX_PROJECTILES`, `BATTLE_MAX_EVENTS`, the name
   length) stay macros. Since the grid's size is data, its upper limits are macros too: `BATTLE_MAX_GRID_WIDTH 64`,
   `BATTLE_MAX_GRID_LENGTH 128`, `BATTLE_MAX_ZONE_ROWS 32`, `BATTLE_MAX_PLACES (BATTLE_MAX_ZONE_ROWS * BATTLE_MAX_GRID_WIDTH)`. The
-  ranges in the table above come from them. So do a squad's: `BATTLE_MAX_SQUAD_SIZE 64`, `BATTLE_MAX_FOOTPRINT 4`, and the units a
+  ranges in the table above come from them. So do a squad's: `BATTLE_MAX_SQUAD_SIZE 64`, `BATTLE_MAX_FOOTPRINT 8`, and the units a
   side may have, `BATTLE_MAX_TEAM_UNITS 2048`.
 
 #### `roles`
 
 Optional. Declares the **role tags** a unit may carry. People use them to sort units; the rules (`battle.c`) never read them, so a role
-never changes a round. One name a line (`[A-Za-z_][A-Za-z0-9_]*`, up to 31 bytes), at most 32, with a comment for what each means.
+never changes a round. One role a line, its name the line's whole text (spaces allowed, no comma, up to 31 bytes: `Chaff Clear`,
+`Support(future)`), at most 32, with a comment for what each means. A unit's `roles` lists declared roles with commas between them
+(`roles Chaff/Screen, Flanker`).
 
 | Error | Example |
 |---|---|
-| more than one name on a line | `a role line takes one name` |
+| a comma in a name, over 31 bytes | `a role's name cannot hold ','`, `a role's name is longer than 31 bytes` |
 | a name declared twice | `role 'frontline' is declared twice` |
 | more than 32 | `too many roles (at most 32)` |
 | given twice, or with a value | `'roles' is given twice`, `'roles' takes no value` |
 | out of place (before `rules`, after a unit) | `'roles' must come after 'rules' and before the units` |
 
-#### `unit <name>`
+#### `unit <unit_id>`
 
-| Key | Value | Required | Range, default |
-|---|---|---|---|
-| `unit <name>` | Block | One or more, at most 16 | The name is unique in the file |
-| ├ `cost` | Integer, of the whole squad | Yes | 1–10000 |
-| ├ `squad` | Integer, the squad's units | No | 1–64, default 1 |
-| ├ `footprint` | Integer, the side of the square the squad stands on, in cells | No | 1–4, default 1. At most a zone's rows and its width |
-| ├ `health` | Number | Yes | > 0 |
-| ├ `armor` | Number | No | ≥ 0, default 0 |
-| ├ `speed` | Number, m/s | Yes | ≥ 0 |
-| ├ `radius` | Number, m | Yes | > 0 |
-| ├ `height` | Number, m | Yes | > 0 |
-| ├ `layer` | Word: `ground`, `air` | No | Default `ground`. `air` is a flier (it flies at `altitude`) |
-| ├ `altitude` | Number, m | Yes for air, forbidden for ground | > 0. The height an air unit flies at |
-| ├ `roles` | Names, several allowed | No | Names declared in the `roles` block. Several on a line; a name twice is an error (`unknown role 'x' (declare it under 'roles')`) |
-| ├ `weapon <name>` | Block | Yes, exactly one | |
-| │ ├ `range` | Number, m | Yes | > 0 |
-| │ ├ `damage` | Number | Yes | ≥ 0 |
-| │ ├ `cooldown` | Number, s | Yes | > 0 |
-| │ ├ `launch_angle` | Number, degrees | Yes | Above 0 and below 90 |
-| │ ├ `spread` | Number, m | No | ≥ 0, default 0 |
-| │ ├ `targets` | Words: `ground`, `air` (both on a line) | No | The layers it can hit. Default `ground` |
-| │ └ `muzzle` | Three numbers (x y z), m, unit space | No | Default 0 0 0 |
-| └ `ability <kind>` | Block | No, at most one | Kinds: `shield` |
-| &nbsp;&nbsp; ├ `radius` | Number, m | Yes | > 0 |
-| &nbsp;&nbsp; ├ `capacity` | Number | Yes | > 0 |
-| &nbsp;&nbsp; ├ `regen` | Number, per second | Yes | ≥ 0 |
-| &nbsp;&nbsp; └ `regen_delay` | Number, s | Yes | ≥ 0 |
+A unit block is a row of the wiki's [Unit Stats](https://github.com/chromedays/autobattler/wiki/Unit‐Stats) `unit_stats.csv`
+(`docs/specs/unit_fields.md`). The keys are the CSV's column names and the values are written as the CSV writes them: a line for each
+cell of the row that is not empty, none for an empty one. The block's name is the `unit_id`. Each key's value, whether it is required,
+its range and default, and the checks keys make of each other (the wiki's load-time checks) are `unit_fields.md`'s "키" (Keys) and "읽을 때의
+검사" (Checks when reading); they are not repeated here. In groups:
 
-- A unit def is placed as a **squad** (`battle.md`, "Squads"): one placement puts `squad` units on `footprint` × `footprint` cells,
-  for `cost`. The other keys (health, the weapon, the ability) are each unit's own. Without the two keys a unit is one on one cell.
-- A `footprint` larger than a zone's rows or the grid's width is reported at the `footprint` line: `'footprint' must be at most 14 (a
-  zone's rows and width)`. It is not judged when the rules have an error.
-- A squad's units must not overlap where they are placed. Units side by side in a row are the nearest (there are never more rows than
-  columns), `footprint × cell_size / columns` apart (the columns are the fewest whose square holds the units). When that is less than a
-  unit's width (`2 × radius`), the `squad` line says `16 units on 1x1 cells stand 0.5 m apart, under their width (1 m)`. Touching (the
-  gap equal to the width) is fine. It is not judged when the rules or that unit have another error (one mistake, one error).
+| Group | Keys |
+|---|---|
+| Always required | `name`, `cost`, `squad_size`, `unit_layer`, `target_layer`, `footprint_w`, `footprint_d`, `radius_m`, `height_m`, `hp`, `armor`, `move_speed`, `range`, `damage`, `attack_interval`, `hits_or_shots_per_attack`, `splash_radius`, `attack_type` |
+| Conditional | `altitude_m` (required with `unit_layer Air`, an error with `Ground`), `target_priority` (only with `target_layer Both`) |
+| Optional | `roles`, `shield_hp` |
+| Projectile (an error when `attack_type` is `Melee`) | Required: `initial_speed_mps`, `forward_acceleration_mps2`, `lifetime_s`, `max_travel_m`, `collision_radius_m`, `trajectory_mode`, `target_leading`. Optional: `max_speed_mps`, `gravity_scale`, `aim_point_scatter_m`, `launch_spread_deg`, `piercing_count`, `interceptable`, `retargeting_allowed`. `arc_height_m` is required with `ScriptedArc`, an error with `Straight` |
+| Guidance | Required with `GuidedProjectile`: `turn_rate_deg_s`, `guidance_delay_s`, `guidance_mode`. Optional: `target_loss_behavior` |
+
+- A unit def is placed as a **squad** (`battle.md`, "Squads"): one placement puts `squad_size` units on `footprint_w` × `footprint_d`
+  cells (w along +X, d along the rows), for `cost`. The other keys are each unit's own.
+- A `footprint_w` wider than the grid is reported at its line, `'footprint_w' must be at most 32 (the grid's width)`; a `footprint_d`
+  deeper than a zone, `'footprint_d' must be at most 14 (a zone's rows)`. They are not judged when the rules have an error.
+- A squad's units must not overlap where they are placed. The grid is the wiki's D-07: with W and D the footprint's size in meters,
+  there are `ceil(sqrt(squad_size × W / D))` columns (1 to `squad_size`) and the units over the columns, rounded up, rows, and they are
+  `min(W / columns, D / rows)` apart (`battle_squad_grid`). When that is less than a unit's width (`2 × radius_m`), the footprint as it
+  stands or turned (W and D swapped), the `squad_size` line says `24 units on 5x2 cells stand 1 m apart when turned, under their width
+  (1.1 m)`. Touching (the gap equal to the width) is fine. A squad of one too (the footprint's shorter side at least its width). It is
+  not judged when the rules or that unit have another error (one mistake, one error).
+- Keys the round does not follow yet (`unit_fields.md`, "과도기" (Interim)) are read, checked and kept. The read writes their names
+  into `BattleDefs.unfollowed`, and loading a project (`game_load_project`) logs one warning of them.
 
 #### Layers
 
-- A unit is **ground** (`ground`, the default) or **air** (`air`). An air unit flies at its `altitude`, which it needs. A ground unit with
-  an `altitude` is an error (`'altitude' is only for air units`). An air unit's body stands from that height up by its `height`.
-- A weapon's `targets` are the layers it can hit (`ground`, `air`, or both). The default is `ground`. A target is picked among the enemies of
-  those layers, and a shell **passes** the units and shields of other layers. An anti-air weapon (`targets air`) aims at the middle of an air
-  target's body.
+- A unit is **ground** (`unit_layer Ground`) or **air** (`unit_layer Air`). An air unit flies at its `altitude_m`, which it needs (`unit 'U06'
+  flies (unit_layer Air) and needs 'altitude_m'`). A ground unit with an `altitude_m` is an error (`'altitude_m' is only for air units`). An
+  air unit's body stands from that height up by its `height_m`.
+- `target_layer` is the layers a unit can hit (`Ground`, `Air`, `Both`). A target is picked among the enemies of those layers, and a
+  shell **passes** the units of other layers. An air target is aimed at the middle of its body. `target_priority` (the layer picked first
+  with `Both`) is read but not followed yet.
 - Units of different layers do not push each other apart (an air unit may pass over a ground unit).
 - A layer changes a round. A role (`roles`) does not.
 
@@ -517,7 +549,7 @@ never changes a round. One name a line (`[A-Za-z_][A-Za-z0-9_]*`, up to 31 bytes
 |---|---|---|---|
 | `supply <integer>` | Each side's supply | Yes, once | 1–100000 |
 | `seed <integer>` | The random seed (spread); the same deployment gives the same result | No, once | 0–4294967295, default 1 |
-| `place <unit name> <cell x> <cell row>` | One enemy squad. The cell is its footprint's corner nearest the origin | One or more | The name is one of the `unit`s above. The whole footprint in the enemy zone (x 0 to (width − footprint), the row from the enemy zone's first to (length − footprint)). Footprints do not overlap. Total cost ≤ `supply`, total units ≤ 2048 |
+| `place <unit_id> <cell x> <cell row>` | One enemy squad. The cell is its footprint's corner nearest the origin | One or more | One of the `unit`s above. The whole footprint in the enemy zone (x 0 to (width − `footprint_w`), the row from the enemy zone's first to (length − `footprint_d`)). Footprints do not overlap. Total cost ≤ `supply`, total units ≤ 2048 |
 
 A `place` row is the row on the whole field (34–47 with `grid 32 48` and `zone_rows 14`). Its range is computed from `rules`. When
 `rules` has an error, the grid the cell would be judged against is not known, so `place` has no cell checks (so a wrong grid does not
@@ -525,58 +557,99 @@ make right lines errors). Its unit name and numbers are still checked.
 
 ### Example
 
-`data/default.abproj`. The rules are the values that were in code. The Crawler is a squad of six on
-2 × 2 cells (a squad's units need not match its cells).
+The start of `data/default.abproj`. The rules' grid and round time are the wiki's D-17 and D-24. The units are the wiki's U01 to U10;
+below are one melee unit and one projectile unit with a shield.
 
 ```
-# data/default.abproj: the auto-battler's rules, units and stage (docs/specs/abproj.md)
+# autobattler/data/default.abproj: the auto-battler's rules, units and stage (docs/specs/abproj.md). The units are the wiki's
+# unit_stats.csv (docs/specs/unit_fields.md): one line per cell of a row, none for an empty cell.
 abproj_version 1
 
 rules
     cell_size 2              # m
-    grid 32 48               # cells across, rows long
+    grid 32 68               # cells across, rows long (the wiki's D-17)
     zone_rows 14             # each side's deployment rows
-    round_time 60            # s
+    round_time 90            # s (the wiki's D-24)
     gravity 9.8              # m/s²
     retarget_interval 0.25   # s
-    stop_fraction 0.9        # of the weapon's range
+    stop_fraction 0.9        # of the range
     min_damage_fraction 0.25 # armor never takes more than 75% of a hit
 
-unit Crawler
-    cost 100           # the whole squad
-    squad 6            # units
-    footprint 2        # cells on a side
-    health 120
-    armor 5
-    speed 5            # m/s
-    radius 0.5
-    height 0.8
-    weapon Lobber
-        range 20
-        damage 30
-        cooldown 1.5
-        launch_angle 45    # degrees
-        spread 0.5
-        muzzle 0 0.6 0.3
-    ability shield
-        radius 1.2
-        capacity 60
-        regen 10           # per second
-        regen_delay 3
+roles
+    Chaff/Screen
+    Flanker
+    Tank/Anchor
+    Support(future)
+    # ... the roster's other roles
+
+unit U01
+    name Scout Swarm
+    cost 50
+    squad_size 24
+    roles Chaff/Screen, Flanker
+    unit_layer Ground
+    target_layer Ground
+    footprint_w 5
+    footprint_d 2
+    radius_m 0.5
+    height_m 0.8
+    hp 45
+    armor 0
+    move_speed 15
+    range 6
+    damage 7
+    attack_interval 0.7
+    hits_or_shots_per_attack 1
+    splash_radius 0
+    attack_type Melee
+
+unit U04
+    name Shield Guard
+    cost 150
+    squad_size 1
+    roles Tank/Anchor, Support(future)
+    unit_layer Ground
+    target_layer Ground
+    footprint_w 3
+    footprint_d 3
+    radius_m 2.0
+    height_m 3.5
+    hp 2000
+    armor 20
+    shield_hp 500
+    move_speed 5
+    range 12
+    damage 50
+    attack_interval 1.5
+    hits_or_shots_per_attack 1
+    splash_radius 0
+    attack_type UnguidedProjectile
+    initial_speed_mps 80
+    forward_acceleration_mps2 0
+    lifetime_s 0.5
+    max_travel_m 25
+    collision_radius_m 0.15
+    gravity_scale 0
+    aim_point_scatter_m 0
+    launch_spread_deg 0
+    piercing_count 0
+    interceptable false
+    trajectory_mode Straight
+    target_leading true
+
+# ... U02, U03 and U05 to U10
 
 stage
     supply 1000
     seed 1
-    place Crawler 12 36
-    place Crawler 14 36
-    place Crawler 16 36
-    place Crawler 18 36
-    place Crawler 13 38
-    place Crawler 15 38
-    place Crawler 17 38
-    place Crawler 14 40
-    place Crawler 16 40
-    place Crawler 15 42
+    place U01 0 54
+    place U01 26 54
+    place U01 8 60
+    place U02 6 54
+    place U02 20 54
+    place U04 14 54
+    place U03 10 57
+    place U10 14 60
 ```
 
 ### Versions
@@ -595,7 +668,7 @@ stage
 
 | Version | What changed | Reading older files |
 |---|---|---|
-| 1 | The first format. Still in development, so the version is not raised: the changes are listed here. A unit's `squad` and `footprint` (squads; a `place`'s cell is the footprint's corner). Without them a unit is one on one cell. The `roles` block and a unit's `roles` (role tags), `layer`, `altitude` and a weapon's `targets` (layers) | — |
+| 1 | The first format. Still in development, so the version is not raised: the changes are listed here. A unit's `squad` and `footprint` (squads; a `place`'s cell is the footprint's corner). Without them a unit is one on one cell. The `roles` block and a unit's `roles` (role tags), `layer`, `altitude` and a weapon's `targets` (layers). The unit block became the fields of the wiki's `unit_stats.csv` (2026-11-06, `unit_fields.md`): the keys are the CSV's column names, the block is flat (no `weapon` or `ability` block) and named by its `unit_id`, text, list and boolean values were added, and role names are text. The old keys (`squad`, `footprint`, `health`, `speed`, `layer`, `targets`, `cooldown`, `launch_angle`, `spread`, `muzzle`, the shield block) are gone | Older files do not read (in development) |
 
 ### Reading and errors
 
@@ -680,7 +753,7 @@ once, without a text editor, and Save writes it to the file.
   the camera starts over only when the field's size changed (`view_apply_rules`). The unit meshes stay. It does not count as a
   project put in place (`project_loads`).
 - **A bad change changes nothing:** the panel says "Not changed: <the first error>" in red; for example, `zone_rows` over half the
-  grid's length, a smaller grid that leaves a stage `place` outside the enemy zone, `zone_rows` under a unit's `footprint`, or a smaller `cell_size` that makes
+  grid's length, a smaller grid that leaves a stage `place` outside the enemy zone, `zone_rows` under a unit's `footprint_d`, or a smaller `cell_size` that makes
   a squad's units overlap. The next change made clears that message.
 - **Only in deployment:** once a round starts the widgets are disabled ("Rules change only in deployment"). Stepping back
   (`battle_seek`) plays the round again from its start, so a rule changed during a round would make that round impossible to
@@ -708,15 +781,17 @@ once, without a text editor, and Save writes it to the file.
 - Scenes on changed rules: another grid and cell size (cell centers, outside the zone, the field's edge), a short `round_time` ends at
   that tick, `retarget_interval`, `stop_fraction`, `gravity` (a shell lands on its aim point under any pull, and flies longer under
   less), `min_damage_fraction` 0 and 1.
-- Layers: defaults (ground, `ground`), `layer air` with `altitude`, air without `altitude`, ground with `altitude`, `altitude 0`, an unknown word, given twice, no value, `targets` words (both, unknown, twice, no value), `targets` in a unit block is an unknown key.
-- Roles: the `roles` block's errors (one name a line, declared once, at most 32, its place) and a unit's `roles` errors (undeclared, given twice, no role) are at their lines. A mask is the bits in declaration order. A round with roles has the same hash as without.
-- Squads: `squad` and `footprint` read, 1 without them, their ranges (0, over the
-  limit, not an integer, twice), a footprint larger than a zone and a rules edit that would make it so refused, a squad whose units overlap (touching is fine, no error
+- Layers: `unit_layer Air` with `altitude_m`, air without `altitude_m`, ground with `altitude_m`, `altitude_m 0`, an unknown word (case), given twice, no value, `target_layer` words (`Both`, unknown, two values, no value).
+- Unit fields (`unit_fields.md`, "테스트" (Tests)): each column missing, out of range, not an integer, its default; the new kinds of value (text, words, booleans); a scene for each row of the wiki's load-time check table; the wiki's ten units read and the keys not followed yet are listed; the D-07 grid and its spacing both ways; rectangular placement; shield HP; melee.
+- Roles: the `roles` block's errors (a comma in a name, over 31 bytes, declared twice, over 32, its place) and a unit's `roles` errors (undeclared, given twice, an empty item, no role) are at their lines. Names with spaces, and spaces around the commas. A mask is the bits in declaration order. A round with other roles has the same hash.
+- Squads: the ranges of `squad_size`, `footprint_w` and `footprint_d` (0, over the
+  limit, not an integer, twice), a footprint deeper than a zone or wider than the grid and a rules edit that would make it so refused, a squad whose units overlap (touching is fine, no error
   on top of another, a `cell_size` edit that would make it so refused), a `place`'s footprint
   inside the enemy zone (the last x and row), overlap, an unknown unit's cell, supply by squad, and over 2048 enemy units.
-- **Golden hashes:** rounds of seeds 1 to 4 on `full_project` give the tick count, the outcome, the hash at tick 300, the hash at the
-  end and the enemies left that they gave before the rules moved from code to the file. If a change to the rules' arithmetic changes
-  a round, these are meant to change, and are changed on purpose.
+- **Golden hashes:** rounds of seeds 1 to 4 on `full_project` (a copy of `default.abproj` from when its units became the wiki's) give
+  the tick count, the outcome, the hash at tick 300, the hash at the end and the enemies left. They were recorded again when the units
+  became the wiki's (2026-11-06). If a change to the rules' arithmetic changes a round, these are meant to change, and are changed on
+  purpose.
 
 ### Phases
 
@@ -732,9 +807,8 @@ once, without a text editor, and Save writes it to the file.
   version line checks that the two fit.
 - **Several stages:** `stage` gets a name (`stage <name>`) and there can be several. If stages come to have fields of different
   sizes, `grid` moves to `stage`. Raises the version.
-- **B's keys:** a unit's `size`, several `weapon` blocks with a weapon's `projectile`,
-  `targets`, `min_range`, `splash`, `speed` and `turn_rate`, `ability jump`, and the stage's `prop` join with the same syntax. An
-  unknown key is still an error. Each is listed in the version table.
+- **A unit's keys:** when the wiki adds or changes a column, the format follows it under the same name (`unit_fields.md`, "나중에"
+  (Later)). Other keys, such as the stage's `prop`, join with the same syntax. An unknown key is still an error.
 - **Effects and unit looks:** code in `battle_view.c` for now. They become blocks if designers need to work on them.
 
 ### Open questions

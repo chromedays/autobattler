@@ -12,47 +12,58 @@
 #define LAB_CAMERA_MIN_DISTANCE 40.0f
 #define LAB_CAMERA_PER_DISTANCE 2.0f // the camera's distance for each meter between the unit and its targets
 
-// The keys the Unit section edits, in the file's order (abproj.md, "unit <name>"). The labels go through T() where they are
+// The number keys the Unit section edits, in the file's order (unit_fields.md, "Keys"). The labels go through T() where they are
 // shown; strings_test finds them by their `.label =`.
+#define VALUE(name, kind_, member) .key = name, .kind = kind_, .offset = offsetof(UnitDef, member)
 global const UnitValueKey unit_value_keys[] = {
-    {.block = DEFS_BLOCK_UNIT, .key = "cost", .label = "Cost", .kind = UNIT_VALUE_INTEGER,
-     .offset = offsetof(UnitDef, cost), .speed = 1.0f, .min = 1.0f, .max = 10000.0f, .battle_only = true},
-    {.block = DEFS_BLOCK_UNIT, .key = "squad", .label = "Squad", .kind = UNIT_VALUE_INTEGER,
-     .offset = offsetof(UnitDef, squad_size), .speed = 0.1f, .min = 1.0f, .max = BATTLE_MAX_SQUAD_SIZE, .battle_only = true},
-    {.block = DEFS_BLOCK_UNIT, .key = "footprint", .label = "Footprint (cells)", .kind = UNIT_VALUE_INTEGER,
-     .offset = offsetof(UnitDef, footprint), .speed = 0.05f, .min = 1.0f, .max = BATTLE_MAX_FOOTPRINT, .battle_only = true},
-    {.block = DEFS_BLOCK_UNIT, .key = "health", .label = "Health", .kind = UNIT_VALUE_NUMBER,
-     .offset = offsetof(UnitDef, health), .speed = 1.0f, .min = 1.0f, .max = 100000.0f},
-    {.block = DEFS_BLOCK_UNIT, .key = "armor", .label = "Armor", .kind = UNIT_VALUE_NUMBER,
-     .offset = offsetof(UnitDef, armor), .speed = 0.1f, .min = 0.0f, .max = 1000.0f},
-    {.block = DEFS_BLOCK_UNIT, .key = "speed", .label = "Speed (m/s)", .kind = UNIT_VALUE_NUMBER,
-     .offset = offsetof(UnitDef, speed), .speed = 0.05f, .min = 0.0f, .max = 100.0f},
-    {.block = DEFS_BLOCK_UNIT, .key = "radius", .label = "Radius (m)", .kind = UNIT_VALUE_NUMBER,
-     .offset = offsetof(UnitDef, radius), .speed = 0.01f, .min = 0.05f, .max = 10.0f},
-    {.block = DEFS_BLOCK_UNIT, .key = "height", .label = "Height (m)", .kind = UNIT_VALUE_NUMBER,
-     .offset = offsetof(UnitDef, height), .speed = 0.01f, .min = 0.05f, .max = 20.0f},
-    {.block = DEFS_BLOCK_UNIT, .key = "altitude", .label = "Altitude (m)", .kind = UNIT_VALUE_NUMBER,
-     .offset = offsetof(UnitDef, altitude), .speed = 0.1f, .min = 0.1f, .max = 100.0f},
-    {.block = DEFS_BLOCK_WEAPON, .key = "range", .label = "Range (m)", .kind = UNIT_VALUE_NUMBER,
-     .offset = offsetof(UnitDef, weapon.range), .speed = 0.1f, .min = 0.1f, .max = 300.0f},
-    {.block = DEFS_BLOCK_WEAPON, .key = "damage", .label = "Damage", .kind = UNIT_VALUE_NUMBER,
-     .offset = offsetof(UnitDef, weapon.damage), .speed = 0.5f, .min = 0.0f, .max = 10000.0f},
-    {.block = DEFS_BLOCK_WEAPON, .key = "cooldown", .label = "Cooldown (s)", .kind = UNIT_VALUE_NUMBER,
-     .offset = offsetof(UnitDef, weapon.cooldown), .speed = 0.01f, .min = 0.04f, .max = 60.0f},
-    {.block = DEFS_BLOCK_WEAPON, .key = "launch_angle", .label = "Launch angle (°)", .kind = UNIT_VALUE_ANGLE,
-     .offset = offsetof(UnitDef, weapon.launch_angle), .speed = 0.2f, .min = 1.0f, .max = 89.0f},
-    {.block = DEFS_BLOCK_WEAPON, .key = "spread", .label = "Spread (m)", .kind = UNIT_VALUE_NUMBER,
-     .offset = offsetof(UnitDef, weapon.spread), .speed = 0.01f, .min = 0.0f, .max = 20.0f},
-    {.block = DEFS_BLOCK_WEAPON, .key = "muzzle", .label = "Muzzle (x, y, z)", .kind = UNIT_VALUE_VECTOR,
-     .offset = offsetof(UnitDef, weapon.muzzle), .speed = 0.01f, .min = -10.0f, .max = 10.0f},
-    {.block = DEFS_BLOCK_ABILITY, .key = "radius", .label = "Shield radius (m)", .kind = UNIT_VALUE_NUMBER,
-     .offset = offsetof(UnitDef, ability.shield.radius), .speed = 0.01f, .min = 0.05f, .max = 20.0f},
-    {.block = DEFS_BLOCK_ABILITY, .key = "capacity", .label = "Shield capacity", .kind = UNIT_VALUE_NUMBER,
-     .offset = offsetof(UnitDef, ability.shield.capacity), .speed = 0.5f, .min = 0.5f, .max = 10000.0f},
-    {.block = DEFS_BLOCK_ABILITY, .key = "regen", .label = "Shield regen (/s)", .kind = UNIT_VALUE_NUMBER,
-     .offset = offsetof(UnitDef, ability.shield.regen), .speed = 0.1f, .min = 0.0f, .max = 1000.0f},
-    {.block = DEFS_BLOCK_ABILITY, .key = "regen_delay", .label = "Shield regen delay (s)", .kind = UNIT_VALUE_NUMBER,
-     .offset = offsetof(UnitDef, ability.shield.regen_delay), .speed = 0.05f, .min = 0.0f, .max = 60.0f},
+    {VALUE("cost", UNIT_VALUE_INTEGER, cost), .label = "Cost", .speed = 1.0f, .min = 1.0f, .max = 10000.0f, .battle_only = true},
+    {VALUE("squad_size", UNIT_VALUE_INTEGER, squad_size), .label = "Squad size", .speed = 0.1f, .min = 1.0f, .max = BATTLE_MAX_SQUAD_SIZE,
+     .battle_only = true},
+    {VALUE("footprint_w", UNIT_VALUE_INTEGER, footprint_w), .label = "Footprint width (cells)", .speed = 0.05f, .min = 1.0f,
+     .max = BATTLE_MAX_FOOTPRINT, .battle_only = true},
+    {VALUE("footprint_d", UNIT_VALUE_INTEGER, footprint_d), .label = "Footprint depth (cells)", .speed = 0.05f, .min = 1.0f,
+     .max = BATTLE_MAX_FOOTPRINT, .battle_only = true},
+    {VALUE("radius_m", UNIT_VALUE_NUMBER, radius), .label = "Radius (m)", .speed = 0.01f, .min = 0.05f, .max = 10.0f},
+    {VALUE("height_m", UNIT_VALUE_NUMBER, height), .label = "Height (m)", .speed = 0.01f, .min = 0.05f, .max = 20.0f},
+    {VALUE("altitude_m", UNIT_VALUE_NUMBER, altitude), .label = "Altitude (m)", .speed = 0.1f, .min = 0.1f, .max = 100.0f,
+     .shown = UNIT_VALUE_AIR},
+    {VALUE("hp", UNIT_VALUE_WHOLE, hp), .label = "HP", .speed = 1.0f, .min = 1.0f, .max = 100000.0f},
+    {VALUE("armor", UNIT_VALUE_WHOLE, armor), .label = "Armor", .speed = 0.1f, .min = 0.0f, .max = 1000.0f},
+    {VALUE("shield_hp", UNIT_VALUE_WHOLE, shield_hp), .label = "Shield HP", .speed = 1.0f, .min = 1.0f, .max = 100000.0f},
+    {VALUE("move_speed", UNIT_VALUE_NUMBER, move_speed), .label = "Move speed (m/s)", .speed = 0.05f, .min = 0.0f, .max = 100.0f},
+    {VALUE("range", UNIT_VALUE_NUMBER, range), .label = "Range (m)", .speed = 0.1f, .min = 0.1f, .max = 300.0f},
+    {VALUE("damage", UNIT_VALUE_WHOLE, damage), .label = "Damage", .speed = 0.5f, .min = 0.0f, .max = 10000.0f},
+    {VALUE("attack_interval", UNIT_VALUE_NUMBER, attack_interval), .label = "Attack interval (s)", .speed = 0.01f, .min = 0.04f,
+     .max = 60.0f},
+    {VALUE("hits_or_shots_per_attack", UNIT_VALUE_INTEGER, hits_per_attack), .label = "Hits or shots per attack", .speed = 0.05f,
+     .min = 1.0f, .max = BATTLE_MAX_HITS},
+    {VALUE("splash_radius", UNIT_VALUE_NUMBER, splash_radius), .label = "Splash radius (m)", .speed = 0.05f, .min = 0.0f, .max = 50.0f},
+    {VALUE("initial_speed_mps", UNIT_VALUE_NUMBER, projectile.initial_speed), .label = "Initial speed (m/s)", .speed = 0.5f,
+     .min = 0.1f, .max = 1000.0f, .shown = UNIT_VALUE_PROJECTILE},
+    {VALUE("forward_acceleration_mps2", UNIT_VALUE_NUMBER, projectile.forward_acceleration), .label = "Forward acceleration (m/s²)",
+     .speed = 0.5f, .min = 0.0f, .max = 1000.0f, .shown = UNIT_VALUE_PROJECTILE},
+    {VALUE("max_speed_mps", UNIT_VALUE_NUMBER, projectile.max_speed), .label = "Max speed (m/s)", .speed = 0.5f, .min = 0.1f,
+     .max = 1000.0f, .shown = UNIT_VALUE_PROJECTILE},
+    {VALUE("lifetime_s", UNIT_VALUE_NUMBER, projectile.lifetime), .label = "Lifetime (s)", .speed = 0.01f, .min = 0.04f, .max = 60.0f,
+     .shown = UNIT_VALUE_PROJECTILE},
+    {VALUE("max_travel_m", UNIT_VALUE_NUMBER, projectile.max_travel), .label = "Max travel (m)", .speed = 0.5f, .min = 0.1f,
+     .max = 1000.0f, .shown = UNIT_VALUE_PROJECTILE},
+    {VALUE("collision_radius_m", UNIT_VALUE_NUMBER, projectile.collision_radius), .label = "Collision radius (m)", .speed = 0.005f,
+     .min = 0.01f, .max = 5.0f, .shown = UNIT_VALUE_PROJECTILE},
+    {VALUE("gravity_scale", UNIT_VALUE_NUMBER, projectile.gravity_scale), .label = "Gravity scale", .speed = 0.01f, .min = 0.0f,
+     .max = 10.0f, .shown = UNIT_VALUE_PROJECTILE},
+    {VALUE("turn_rate_deg_s", UNIT_VALUE_ANGLE, projectile.turn_rate), .label = "Turn rate (°/s)", .speed = 1.0f, .min = 1.0f,
+     .max = 3600.0f, .shown = UNIT_VALUE_GUIDED},
+    {VALUE("guidance_delay_s", UNIT_VALUE_NUMBER, projectile.guidance_delay), .label = "Guidance delay (s)", .speed = 0.01f,
+     .min = 0.0f, .max = 10.0f, .shown = UNIT_VALUE_GUIDED},
+    {VALUE("aim_point_scatter_m", UNIT_VALUE_NUMBER, projectile.aim_point_scatter), .label = "Aim point scatter (m)", .speed = 0.01f,
+     .min = 0.0f, .max = 20.0f, .shown = UNIT_VALUE_PROJECTILE},
+    {VALUE("launch_spread_deg", UNIT_VALUE_ANGLE, projectile.launch_spread), .label = "Launch spread (°)", .speed = 0.1f, .min = 0.0f,
+     .max = 89.0f, .shown = UNIT_VALUE_PROJECTILE},
+    {VALUE("piercing_count", UNIT_VALUE_INTEGER, projectile.piercing_count), .label = "Piercing count", .speed = 0.05f, .min = 0.0f,
+     .max = 100.0f, .shown = UNIT_VALUE_PROJECTILE},
+    {VALUE("arc_height_m", UNIT_VALUE_NUMBER, projectile.arc_height), .label = "Arc height (m)", .speed = 0.1f, .min = 0.1f,
+     .max = 200.0f, .shown = UNIT_VALUE_ARC},
 };
 
 const UnitValueKey* lab_unit_value_key(u32 index)
@@ -216,13 +227,13 @@ void lab_view_overlay(Game* game)
         drawn[slot] = nv_scene_get(game->scene, game->unit_nodes[slot])->position;
 
     // The unit's range on the ground, and where it stops when it walks.
-    const WeaponDef* weapon = &lab->defs.units[LAB_DEF_UNIT].weapon;
-    f32 stop = weapon->range * lab->defs.rules.stop_fraction;
+    const UnitDef* unit_def = &lab->defs.units[LAB_DEF_UNIT];
+    f32 stop = unit_def->range * lab->defs.rules.stop_fraction;
     NvVec3 ground = nv_vec3(drawn[LAB_SLOT_UNIT].x, 0.05f, drawn[LAB_SLOT_UNIT].z);
     u32 shown = ~game->lab_hidden;
     b32 show_stop = settings->walk && (shown & LAB_SHOW_STOP);
     if (shown & LAB_SHOW_RANGE)
-        view_draw_ring(renderer, ground, nv_vec3(1, 0, 0), nv_vec3(0, 0, 1), weapon->range, nv_vec3(0.9f, 0.75f, 0.3f));
+        view_draw_ring(renderer, ground, nv_vec3(1, 0, 0), nv_vec3(0, 0, 1), unit_def->range, nv_vec3(0.9f, 0.75f, 0.3f));
     if (show_stop)
         view_draw_ring(renderer, ground, nv_vec3(1, 0, 0), nv_vec3(0, 0, 1), stop, nv_vec3(0.35f, 0.3f, 0.15f));
     // The way moving targets go back and forth, at their height.
@@ -242,8 +253,8 @@ void lab_view_overlay(Game* game)
     const Unit* unit = &battle->units[LAB_SLOT_UNIT];
     NvVec3 across = nv_vec3(cosf(unit->yaw), 0.0f, -sinf(unit->yaw)); // the unit's left: facing (sin yaw, 0, cos yaw) turned
     if (shown & LAB_SHOW_RANGE) {
-        snprintf(text, sizeof(text), T("Range %.1f m"), weapon->range);
-        draw_dimension(game, draw, ground, nv_vec3_add(ground, nv_vec3_scale(across, weapon->range)), text, DIMENSION_RANGE_COLOR, 0.0f,
+        snprintf(text, sizeof(text), T("Range %.1f m"), unit_def->range);
+        draw_dimension(game, draw, ground, nv_vec3_add(ground, nv_vec3_scale(across, unit_def->range)), text, DIMENSION_RANGE_COLOR, 0.0f,
                        1.0f);
     }
     if (show_stop) {
@@ -339,6 +350,19 @@ internal void view_section(Game* game)
     igEndTable();
 }
 
+// Whether a key applies to a unit def, so its widget is shown (unit_fields.md, "Keys").
+internal b32 unit_value_shown(const UnitValueKey* key, const UnitDef* def)
+{
+    switch (key->shown) {
+    case UNIT_VALUE_ALWAYS: return true;
+    case UNIT_VALUE_AIR: return def->layer == UNIT_LAYER_AIR;
+    case UNIT_VALUE_PROJECTILE: return def->attack_type != ATTACK_MELEE;
+    case UNIT_VALUE_GUIDED: return def->attack_type == ATTACK_GUIDED;
+    case UNIT_VALUE_ARC: return def->attack_type != ATTACK_MELEE && def->projectile.trajectory == TRAJECTORY_SCRIPTED_ARC;
+    }
+    return true;
+}
+
 // The lab's unit def as the project's text has it: a change writes the text (game_set_unit_value).
 internal void unit_section(Game* game)
 {
@@ -359,46 +383,37 @@ internal void unit_section(Game* game)
             igSeparatorText(T("Battle only"));
             heading_shown = true;
         }
-        if (key->block == DEFS_BLOCK_ABILITY && def->ability.kind != ABILITY_SHIELD)
-            continue;
-        if (key->block == DEFS_BLOCK_UNIT && def->layer != UNIT_LAYER_AIR && key->offset == offsetof(UnitDef, altitude))
+        if (!unit_value_shown(key, def))
             continue;
         const u8* field = (const u8*)def + key->offset;
         char label[96];
         snprintf(label, sizeof(label), "%s###unit_value%u", T(key->label), i);
-        f64 values[DEFS_UNIT_MAX_VALUES] = {0};
-        u32 count = 1;
+        f64 value = 0.0;
         b32 changed = false;
         switch (key->kind) {
         case UNIT_VALUE_INTEGER: {
-            int value = (int)*(const u32*)field;
-            changed = igDragInt(label, &value, key->speed, (int)key->min, (int)key->max, "%d", ImGuiSliderFlags_AlwaysClamp);
-            values[0] = value;
+            int number = (int)*(const u32*)field;
+            changed = igDragInt(label, &number, key->speed, (int)key->min, (int)key->max, "%d", ImGuiSliderFlags_AlwaysClamp);
+            value = number;
+        } break;
+        case UNIT_VALUE_WHOLE: {
+            int number = (int)*(const f32*)field;
+            changed = igDragInt(label, &number, key->speed, (int)key->min, (int)key->max, "%d", ImGuiSliderFlags_AlwaysClamp);
+            value = number;
         } break;
         case UNIT_VALUE_NUMBER: {
-            f32 value = *(const f32*)field;
-            changed = igDragFloat(label, &value, key->speed, key->min, key->max, "%.2f", ImGuiSliderFlags_AlwaysClamp);
-            values[0] = value;
+            f32 number = *(const f32*)field;
+            changed = igDragFloat(label, &number, key->speed, key->min, key->max, "%.2f", ImGuiSliderFlags_AlwaysClamp);
+            value = number;
         } break;
         case UNIT_VALUE_ANGLE: {
-            f32 value = *(const f32*)field * (180.0f / NV_PI); // degrees, as the file writes it
-            changed = igDragFloat(label, &value, key->speed, key->min, key->max, "%.1f", ImGuiSliderFlags_AlwaysClamp);
-            values[0] = value;
-        } break;
-        case UNIT_VALUE_VECTOR: {
-            NvVec3 vector = *(const NvVec3*)field;
-            f32 value[3] = {vector.x, vector.y, vector.z};
-            igPushItemWidth(igGetFontSize() * 11.0f);
-            changed = igDragFloat3(label, value, key->speed, key->min, key->max, "%.2f", ImGuiSliderFlags_AlwaysClamp);
-            igPopItemWidth();
-            values[0] = value[0];
-            values[1] = value[1];
-            values[2] = value[2];
-            count = 3;
+            f32 number = *(const f32*)field * (180.0f / NV_PI); // degrees, as the file writes it
+            changed = igDragFloat(label, &number, key->speed, key->min, key->max, "%.1f", ImGuiSliderFlags_AlwaysClamp);
+            value = number;
         } break;
         }
         if (changed) {
-            game_set_unit_value(game, key->block, key->key, values, count);
+            game_set_unit_value(game, key->key, value);
             def = &game->defs.units[game->lab_settings.unit_def]; // the defs were read again
         }
     }
