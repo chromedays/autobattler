@@ -11,6 +11,7 @@ global const NvStringPair entries[] = {
     {"Fight", "전투 중"},
     {"Result", "결과"},
     {"Language", "언어"},
+    {"UI scale", "UI 크기"},
     {"Definitions could not be loaded", "정의 파일을 불러오지 못했습니다"},
     {"Project: %s", "프로젝트: %s"},
     {"Open...", "열기..."},

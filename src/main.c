@@ -22,12 +22,27 @@ global u8 scratch_memory[NV_MEGABYTES(4)];
 
 // The viewport and the panel never overlap, since input that starts in the viewport skips ImGui: the panel is on the right
 // of a wide canvas and under a tall one.
+f32 game_ui_scale(const Game* game)
+{
+    return game->imgui.ui_scale * game->ui_zoom;
+}
+
+// The style and font at `zoom` times the engine's, from its own copy so that zooming back and forth does not round away.
+internal void apply_ui_zoom(Game* game, f32 zoom)
+{
+    ImGuiStyle* style = igGetStyle();
+    *style = game->base_style;
+    ImGuiStyle_ScaleAllSizes(style, zoom);
+    style->FontScaleMain = game->base_style.FontScaleMain * zoom;
+    game->ui_zoom = game->ui_zoom_wanted = zoom;
+}
+
 void game_layout(Game* game)
 {
     f32 ratio = nv_window_pixel_ratio(&game->window);
     f32 width_css = (f32)game->gpu.width / ratio, height_css = (f32)game->gpu.height / ratio;
     if (width_css >= height_css * 1.1f) {
-        f32 panel_width_css = fminf(PANEL_WIDTH * game->imgui.ui_scale, width_css * 0.5f);
+        f32 panel_width_css = fminf(PANEL_WIDTH * game_ui_scale(game), width_css * 0.5f);
         game->layout.viewport = nv_window_framebuffer_rect_from_css(0.0f, 0.0f, width_css - panel_width_css, height_css, ratio);
         game->layout.panel = nv_window_framebuffer_rect_from_css(width_css - panel_width_css, 0.0f, width_css, height_css, ratio);
     } else {
@@ -320,6 +335,8 @@ internal void frame(void* userdata)
     if (!gpu_frame.ok)
         return;
     NvGpuView target = gpu_frame.view;
+    if (game->ui_zoom_wanted != game->ui_zoom)
+        apply_ui_zoom(game, game->ui_zoom_wanted); // between frames: ImGui's style may not change inside one
     game_layout(game);
     game->imgui.view_rect = game->layout.viewport;
     nv_imgui_new_frame(&game->imgui, dt);
@@ -385,7 +402,7 @@ internal void frame(void* userdata)
 // in place (the packed one included), 15 whether Save would write the kept local file in place, 16 the grid's width, 17 the
 // local file's status (NvLocalFileStatus, as last polled), 18 whether the project has edits not yet saved, 19 the round's
 // length in ticks, 20 the declared roles, 21 the role filter (a mask), 22 the unit buttons the panel drew last frame, 23 the air
-// units alive.
+// units alive, 24 the UI's scale in hundredths (the game's, on top of the engine's).
 NV_DEBUG_EXPORT int battle_debug(int which)
 {
     const Game* game = &game_state;
@@ -413,6 +430,7 @@ NV_DEBUG_EXPORT int battle_debug(int which)
     case 20: return (int)game->defs.role_count;
     case 21: return (int)game->role_filter;
     case 22: return (int)game->unit_buttons_shown;
+    case 24: return (int)(game->ui_zoom * 100.0f + 0.5f);
     case 23: {
         u32 air = 0;
         for (u32 i = 1; i <= battle->unit_count; ++i)
@@ -573,6 +591,12 @@ NV_DEBUG_EXPORT int battle_debug_lab(int which)
     }
 }
 
+// Asks for the UI's scale in hundredths as the panel's UI scale combo does; it is taken at the start of the next frame.
+NV_DEBUG_EXPORT void battle_debug_set_ui_zoom(int percent)
+{
+    game_state.ui_zoom_wanted = nv_clamp_f32((f32)percent / 100.0f, 0.5f, 4.0f);
+}
+
 // Shows the lab (1) or the battle (0) as the panel's mode buttons do; 1 when it did.
 NV_DEBUG_EXPORT int battle_debug_lab_enter(int on)
 {
@@ -669,6 +693,7 @@ internal const NvDebugCall battle_debug_calls[] = {
     {"lab_action", "i>v", (void*)battle_debug_lab_action},
     {"lab_run", "i>v", (void*)battle_debug_lab_run},
     {"set_unit_value", "ii>i", (void*)battle_debug_set_unit_value},
+    {"set_ui_zoom", "i>v", (void*)battle_debug_set_ui_zoom},
 };
 
 internal NvRect debug_script_viewport(void* user)
@@ -699,6 +724,10 @@ int main(void)
     nv_strings_set_language(nv_strings_system_language());
 
     b32 touch = game->imgui.ui_scale > 1.0f;
+    game->touch = touch;
+    // The UI's scale: a desktop's starts larger (docs/specs/battle.md, "Executable"); a touch screen keeps the engine's.
+    game->base_style = *igGetStyle();
+    apply_ui_zoom(game, touch ? 1.0f : UI_ZOOM_DESKTOP);
     // Shadows (docs/specs/shadows.md) as in the sandbox: lighter on touch screens. The distance follows the camera
     // (view_update).
     game->renderer.shadows = (NvShadowSettings){

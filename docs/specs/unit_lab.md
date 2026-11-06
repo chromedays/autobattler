@@ -200,7 +200,7 @@ Range(사거리 원과 그 치수), Stop distance(정지 거리 원과 그 치�
 
 ### 패널
 
-실험실 모드에서 위에서 아래로: 단계 대신 "Unit Lab", 언어 콤보, 모드 버튼, 프로젝트 줄(Open..., Reload, Save, Save as...), Rules
+실험실 모드에서 위에서 아래로: 단계 대신 "Unit Lab", 언어 콤보, UI scale 콤보(`battle.md`의 "실행 파일"), 모드 버튼, 프로젝트 줄(Open..., Reload, Save, Save as...), Rules
 절(접힌 채 시작; 실험실에서 싸움을 바꾸는 넷만: Gravity, Retarget interval, Stop fraction, Min. damage fraction. 구역이 없고 라운드가
 끝나지 않으며 전장 크기는 표적 거리의 한계일 뿐이라, Cell size, Grid, Zone rows, Round time은 보이지 않는다), 유닛 고르기(이름만의 버튼과
 레이어 줄; 분대 수와 비용은 배치의 정보라 버튼에 쓰지 않는다; 역할 필터는 전투와 같이 쓴다), 분대 줄("A squad of 6: the lab tries one of

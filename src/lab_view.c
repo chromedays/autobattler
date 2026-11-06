@@ -147,6 +147,10 @@ internal ScreenPoint screen_point(Game* game, NvVec3 point)
 // drawn at all.
 internal void draw_dimension(Game* game, ImDrawList* draw, NvVec3 from, NvVec3 to, const char* text, u32 color, f32 min_length, f32 side)
 {
+    // The constants are pixels at the UI's own size; they grow with it, as the text does.
+    f32 ui = game_ui_scale(game);
+    f32 cap = DIMENSION_CAP * ui, gap_pad = DIMENSION_GAP_PAD * ui, thickness = DIMENSION_THICKNESS * ui;
+    min_length *= ui;
     ScreenPoint low = screen_point(game, from), high = screen_point(game, to);
     if (!low.ok || !high.ok)
         return;
@@ -157,26 +161,26 @@ internal void draw_dimension(Game* game, ImDrawList* draw, NvVec3 from, NvVec3 t
     ImVec2_c along = {dx / length, dy / length}, across = {-along.y, along.x};
     for (u32 end = 0; end < 2; ++end) {
         ImVec2_c p = end ? b : a;
-        ImDrawList_AddLine(draw, (ImVec2_c){p.x - across.x * DIMENSION_CAP, p.y - across.y * DIMENSION_CAP},
-                           (ImVec2_c){p.x + across.x * DIMENSION_CAP, p.y + across.y * DIMENSION_CAP}, color, DIMENSION_THICKNESS);
+        ImDrawList_AddLine(draw, (ImVec2_c){p.x - across.x * cap, p.y - across.y * cap},
+                           (ImVec2_c){p.x + across.x * cap, p.y + across.y * cap}, color, thickness);
     }
     ImVec2_c size = igCalcTextSize(text, NULL, false, -1.0f);
     ImVec2_c middle = {(a.x + b.x) * 0.5f, (a.y + b.y) * 0.5f};
     // How far the text's box reaches along the line from its middle.
-    f32 half_gap = (fabsf(along.x) * size.x + fabsf(along.y) * size.y) * 0.5f + DIMENSION_GAP_PAD;
+    f32 half_gap = (fabsf(along.x) * size.x + fabsf(along.y) * size.y) * 0.5f + gap_pad;
     ImVec2_c text_pos;
-    if (length > 2.0f * half_gap + 2.0f * DIMENSION_CAP) {
-        ImDrawList_AddLine(draw, a, (ImVec2_c){middle.x - along.x * half_gap, middle.y - along.y * half_gap}, color, DIMENSION_THICKNESS);
-        ImDrawList_AddLine(draw, (ImVec2_c){middle.x + along.x * half_gap, middle.y + along.y * half_gap}, b, color, DIMENSION_THICKNESS);
+    if (length > 2.0f * half_gap + 2.0f * cap) {
+        ImDrawList_AddLine(draw, a, (ImVec2_c){middle.x - along.x * half_gap, middle.y - along.y * half_gap}, color, thickness);
+        ImDrawList_AddLine(draw, (ImVec2_c){middle.x + along.x * half_gap, middle.y + along.y * half_gap}, b, color, thickness);
         text_pos = (ImVec2_c){middle.x - size.x * 0.5f, middle.y - size.y * 0.5f};
     } else {
-        ImDrawList_AddLine(draw, a, b, color, DIMENSION_THICKNESS);
+        ImDrawList_AddLine(draw, a, b, color, thickness);
         // Beside the line: off its middle across it, by half the text's box that way.
-        f32 reach = ((fabsf(across.x) * size.x + fabsf(across.y) * size.y) * 0.5f + DIMENSION_CAP + DIMENSION_GAP_PAD) * side;
+        f32 reach = ((fabsf(across.x) * size.x + fabsf(across.y) * size.y) * 0.5f + cap + gap_pad) * side;
         text_pos = (ImVec2_c){middle.x + across.x * reach - size.x * 0.5f, middle.y + across.y * reach - size.y * 0.5f};
     }
-    ImDrawList_AddRectFilled(draw, (ImVec2_c){text_pos.x - 3.0f, text_pos.y - 1.0f},
-                             (ImVec2_c){text_pos.x + size.x + 3.0f, text_pos.y + size.y + 1.0f}, 0x99000000u, 3.0f, 0);
+    ImDrawList_AddRectFilled(draw, (ImVec2_c){text_pos.x - 3.0f * ui, text_pos.y - 1.0f * ui},
+                             (ImVec2_c){text_pos.x + size.x + 3.0f * ui, text_pos.y + size.y + 1.0f * ui}, 0x99000000u, 3.0f * ui, 0);
     ImDrawList_AddText_Vec2(draw, text_pos, color, text, NULL);
 }
 

@@ -348,7 +348,7 @@ void view_input(Game* game)
     // What a tap under the mouse pointer would do (a touch screen has none).
     game->hover_shown = false;
     b32 deploying = game->mode == GAME_MODE_BATTLE && game->defs_ok && game->battle.phase == BATTLE_DEPLOY;
-    if (game->imgui.ui_scale <= 1.0f && deploying) {
+    if (!game->touch && deploying) {
         ImVec2_c mouse = igGetIO_Nil()->MousePos;
         const NvRect* v = &game->layout.viewport;
         if (mouse.x * ratio >= (f32)v->x && mouse.x * ratio < (f32)(v->x + v->width) && mouse.y * ratio >= (f32)v->y &&
@@ -809,6 +809,16 @@ void view_panel(Game* game)
         igSetNextItemWidth(igGetFontSize() * 8.0f);
         if (igCombo_Str_arr(TL("Language"), &language, languages, NV_LANGUAGE_COUNT, -1))
             nv_strings_set_language((NvLanguage)language);
+        // The UI's scale on top of the engine's; taken at the next frame's start (main.c).
+        const f32 zooms[UI_ZOOM_CHOICES] = {1.0f, 1.25f, 1.5f, 1.75f, 2.0f, 2.5f};
+        const char* zoom_names[UI_ZOOM_CHOICES] = {"100%", "125%", "150%", "175%", "200%", "250%"};
+        s32 zoom = 0;
+        for (u32 i = 0; i < UI_ZOOM_CHOICES; ++i)
+            if (fabsf(zooms[i] - game->ui_zoom) < 0.01f)
+                zoom = (s32)i;
+        igSetNextItemWidth(igGetFontSize() * 8.0f);
+        if (igCombo_Str_arr(TL("UI scale"), &zoom, zoom_names, UI_ZOOM_CHOICES, -1))
+            game->ui_zoom_wanted = zooms[zoom];
         mode_buttons(game);
 
         // The project: where the rules, units and stage came from, and opening and saving it as a file on this computer

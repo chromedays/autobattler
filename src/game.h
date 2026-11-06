@@ -14,8 +14,12 @@
 #include <engine/strings.h>
 #include <engine/window.h>
 
-// Where the panel goes (CSS pixels): beside the viewport on a wide screen, under it on a tall one.
+// Where the panel goes (CSS pixels, before the UI's scale): beside the viewport on a wide screen, under it on a tall one.
 #define PANEL_WIDTH  300.0f
+// The UI's own scale, on top of the engine's (NvImgui.ui_scale, larger on a touch screen): what a desktop starts at, and the
+// panel's choices.
+#define UI_ZOOM_DESKTOP 2.0f
+#define UI_ZOOM_CHOICES 6
 #define PANEL_HEIGHT_SHARE 0.42f
 
 #define CAMERA_MIN_PITCH    (20.0f * NV_PI / 180.0f)
@@ -157,10 +161,18 @@ typedef struct Game {
     f32 lab_mesh_sizes[LAB_DEF_COUNT][2]; // the radius and height each lab mesh was made for
     NvMaterialId target_material, target_out_of_reach_material;
     u32 lab_hidden; // the lab's View section: the LAB_SHOW_* it hides (0 shows all); not saved and not a change of the run
+
+    // The UI's scale (the panel's UI scale combo; not saved). The engine's ui_scale also tells a finger from a mouse, so the
+    // game scales on top of it instead: the style and font are the engine's (`base_style`) times `ui_zoom`, made again at the
+    // start of a frame when the panel asked for another (`ui_zoom_wanted`), never in the middle of one.
+    b32 touch; // the primary pointer is a finger (the engine's ui_scale > 1)
+    f32 ui_zoom, ui_zoom_wanted;
+    ImGuiStyle base_style;
 } Game;
 
 // main.c
 void game_layout(Game* game);
+f32 game_ui_scale(const Game* game); // CSS pixels per UI pixel: the engine's scale times the game's
 // Reads `text` as a project. A good one is put in place (the battle back in deployment, the view remade for it) and its text
 // kept; a bad one is reported in the panel and changes nothing, unless no good project is in place yet. True when it was good.
 b32 game_load_project(Game* game, const char* name, const char* text, umm size);

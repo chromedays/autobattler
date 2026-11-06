@@ -442,7 +442,10 @@ float는 같은 빌드 안에서 결정적이고 `sinf` 같은 libm 함수도 �
   - `build.yml`의 Package가 `--component autobattler`를 `dist/autobattler-web/release`와 `.../debug`에 설치하고, publish 잡이
     그것을 대시보드에 올린다.
 - **화면:** 전장이 뷰포트이고 ImGui 창 하나(Battle 패널)가 그 옆에 붙는다: 넓은 화면에서는 오른쪽(폭 300), 세로로 긴 화면에서는 아래
-  (높이 42%). 뷰포트에서 시작한 입력은 ImGui를 건너뛰므로 둘은 겹치지 않는다. 에디터의 도크, 검색, 팔레트, 저장, undo, 선택, 콘솔
+  (높이 42%). 뷰포트에서 시작한 입력은 ImGui를 건너뛰므로 둘은 겹치지 않는다. **UI 크기:** 언어 콤보 아래의 UI scale 콤보(100%–250%, 저장하지 않음)가
+  글자, 위젯, 패널 폭(300 × 크기, 화면 폭의 절반까지)을 키운다. 데스크톱은 200%로 시작하고, 터치 화면은 엔진의 크기(1.3배) 그대로 시작한다.
+  엔진의 `ui_scale`은 터치 화면인지도 알리므로 게임은 그것을 바꾸지 않고, 엔진의 스타일에 자기 배율(`Game.ui_zoom`)을 곱한다(바꾼 것은 다음
+  프레임이 시작할 때 걸린다). 에디터의 도크, 검색, 팔레트, 저장, undo, 선택, 콘솔
   탭은 없다. 씬 해상도는 뷰포트와 같게 시작하고, 터치 화면에서는 절반이다(샌드박스처럼). 구석의 빌드 라벨(빌드 종류, 커밋,
   내려받은 양, 커밋 제목)은 샌드박스와 같은 엔진 함수 `nv_imgui_draw_build_label`이 그린다(배지 없음).
 - **카메라:** 플레이어 진영(-Z) 뒤 위에서 비스듬히(피치 62°, 거리 104 m, 96 m 길이의 전장 기준으로 전장 길이에 비례) 전장 전체가 보이게 본다. 왼쪽 드래그나 한 손가락은 땅 위로
@@ -1041,7 +1044,11 @@ The engine is the Git submodule `engine/`, added with `add_subdirectory(engine)`
   - In `build.yml`, Package installs `--component autobattler` into `dist/autobattler-web/release` and `.../debug`, and the publish
     jobs put them on the dashboard.
 - **Screen:** the battlefield is the viewport, with one ImGui window (the Battle panel) beside it: on its right (300 wide) on a wide
-  screen, under it (42% high) on a tall one. They do not overlap, since input that starts in the viewport skips ImGui. None of the
+  screen, under it (42% high) on a tall one. They do not overlap, since input that starts in the viewport skips ImGui. **UI scale:** the
+  UI scale combo under the language (100% to 250%, not saved) enlarges the text, the widgets and the panel's width (300 times the
+  scale, at most half the screen). A desktop starts at 200%, a touch screen at the engine's own scale (1.3). The engine's `ui_scale`
+  also tells a touch screen, so the game leaves it and multiplies the engine's style by a scale of its own (`Game.ui_zoom`; a change
+  is taken when the next frame starts). None of the
   editor's docks, search, palette, saving, undo, selection or Console tab. The scene resolution starts equal to the viewport, and
   half of it on a touch screen (as in the sandbox). The build label in the corner (build type, commit, what was downloaded,
   the commit's subject) is drawn by the engine's `nv_imgui_draw_build_label`, as the sandbox's is (no badge).
