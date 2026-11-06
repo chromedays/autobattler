@@ -1,5 +1,7 @@
 # The Windows build (engine/docs/specs/d3d12_port.md): the Visual Studio generator, every configuration in one build folder.
-# `just` lists the recipes; `just build Release`, `just run`, `just test Release`.
+# `just` lists the recipes; `just build Release`, `just run`, `just test Release`. The web build has its own two, `just web` and
+# `just serve`, with a folder for each configuration (build-release, build-debug); their lines use no shell syntax, so they run
+# under sh and PowerShell alike.
 
 set windows-shell := ["powershell.exe", "-NoLogo", "-NoProfile", "-Command"]
 
@@ -43,3 +45,15 @@ test config="Debug": (build config)
 # Remove one configuration's build output (the solution and the downloaded tools stay).
 clean config="Debug":
     cmake --build {{build_dir}} --config {{config}} --target clean
+
+# Needs the Emscripten SDK on the PATH (emsdk_env) and Ninja; the folder is configured with emcmake the first time.
+# Build the web game of one configuration (Release or Debug) into build-release or build-debug.
+web config="Release":
+    {{ if path_exists(justfile_directory() / ("build-" + lowercase(config)) / "CMakeCache.txt") == "true" { "cmake -E true" } else { "emcmake cmake -S . -B build-" + lowercase(config) + " -G Ninja -DCMAKE_BUILD_TYPE=" + config } }}
+    cmake --build build-{{lowercase(config)}}
+
+# Only on this computer: WebGPU needs a secure context, which plain HTTP is only on localhost and 127.0.0.1, so another
+# device could not run the page anyway (and 0.0.0.0, Python's default, prints a link Chrome refuses WebGPU on).
+# Build the web game, then serve it at http://127.0.0.1:<port>/ (Ctrl+C stops it).
+serve config="Release" port="8000": (web config)
+    python3 -m http.server --bind 127.0.0.1 -d build-{{lowercase(config)}} {{port}}

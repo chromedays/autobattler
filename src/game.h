@@ -4,6 +4,7 @@
 // what the view keeps to draw it. Nothing here is the sandbox's (sandbox/): this executable links only the engine.
 
 #include "battle.h"
+#include "lab.h"
 
 #include <engine/camera.h>
 #include <engine/imgui.h>
@@ -13,8 +14,12 @@
 #include <engine/strings.h>
 #include <engine/window.h>
 
-// Where the panel goes (CSS pixels): beside the viewport on a wide screen, under it on a tall one.
+// Where the panel goes (CSS pixels, before the UI's scale): beside the viewport on a wide screen, under it on a tall one.
 #define PANEL_WIDTH  300.0f
+// The UI's own scale, on top of the engine's (NvImgui.ui_scale, larger on a touch screen): what a desktop starts at, and the
+// panel's choices.
+#define UI_ZOOM_DESKTOP 2.0f
+#define UI_ZOOM_CHOICES 6
 #define PANEL_HEIGHT_SHARE 0.42f
 
 #define CAMERA_MIN_PITCH    (20.0f * NV_PI / 180.0f)
@@ -40,6 +45,33 @@
 
 // What the panel's project buttons do (game_project_action).
 typedef enum ProjectAction { PROJECT_OPEN, PROJECT_RELOAD, PROJECT_SAVE, PROJECT_SAVE_AS } ProjectAction;
+
+// What the viewport and the panel show: the battle, or the unit lab (docs/specs/unit_lab.md).
+typedef enum GameMode { GAME_MODE_BATTLE, GAME_MODE_LAB } GameMode;
+
+// A number key of a unit def the lab's Unit section edits (docs/specs/unit_lab.md, "Editing the unit's values"): where it is
+// in the file and in a UnitDef, and how its widget drags. `offset` is into the UnitDef.
+typedef enum UnitValueKind { UNIT_VALUE_INTEGER, UNIT_VALUE_NUMBER, UNIT_VALUE_ANGLE, UNIT_VALUE_VECTOR } UnitValueKind;
+typedef struct UnitValueKey {
+    u32 block; // DefsBlock
+    const char* key;
+    const char* label;
+    UnitValueKind kind;
+    u32 offset;
+    f32 speed, min, max; // the drag's; the project's reader judges
+    b32 battle_only;     // the lab's run does not read it (it is for deployment): shown last, under its own heading
+} UnitValueKey;
+
+// What the lab draws over its units, each on a box of the panel's View section (game->lab_hidden). A ring and its dimension go
+// together.
+enum {
+    LAB_SHOW_RANGE = 1 << 0,    // the range ring and its dimension
+    LAB_SHOW_STOP = 1 << 1,     // the stop distance's ring and its dimension (when the unit walks)
+    LAB_SHOW_DISTANCE = 1 << 2, // to the unit's target
+    LAB_SHOW_ALTITUDE = 1 << 3, // air units' heights over the ground
+    LAB_SHOW_SIZES = 1 << 4,    // every body's height and width
+    LAB_SHOW_PATHS = 1 << 5,    // the ways moving targets go
+};
 
 // The field's planes.
 enum { FIELD_GROUND, FIELD_PLAYER_ZONE, FIELD_ENEMY_ZONE, FIELD_PLANE_COUNT };
@@ -102,8 +134,7 @@ typedef struct Game {
 
     // The view (battle_view.c)
     Effects effects;
-    NvMeshId unit_meshes[BATTLE_MAX_UNIT_DEFS];
-    u32 unit_meshes_made;
+    NvMeshId unit_meshes[BATTLE_MAX_UNIT_DEFS]; // by unit def; made when first needed, then remade in their slots
     NvNodeId field_nodes[FIELD_PLANE_COUNT];
     NvMaterialId team_materials[2];
     NvMeshId shell_mesh;
@@ -119,10 +150,29 @@ typedef struct Game {
     // The role filter (the Battle panel's toggles): a unit type shows when it has every role lit here. Not saved; a new project clears it.
     u32 role_filter;
     u32 unit_buttons_shown; // how many unit buttons the panel drew last frame (debug)
+    NvMeshId field_meshes[FIELD_PLANE_COUNT];
+
+    // The unit lab (lab.h, lab_view.c). Its settings stay while the program runs; entering the lab starts a run over.
+    GameMode mode;
+    Lab lab;
+    LabSettings lab_settings;
+    b32 lab_settings_set; // lab_settings were made for the project in place
+    NvMeshId lab_meshes[LAB_DEF_COUNT];
+    f32 lab_mesh_sizes[LAB_DEF_COUNT][2]; // the radius and height each lab mesh was made for
+    NvMaterialId target_material, target_out_of_reach_material;
+    u32 lab_hidden; // the lab's View section: the LAB_SHOW_* it hides (0 shows all); not saved and not a change of the run
+
+    // The UI's scale (the panel's UI scale combo; not saved). The engine's ui_scale also tells a finger from a mouse, so the
+    // game scales on top of it instead: the style and font are the engine's (`base_style`) times `ui_zoom`, made again at the
+    // start of a frame when the panel asked for another (`ui_zoom_wanted`), never in the middle of one.
+    b32 touch; // the primary pointer is a finger (the engine's ui_scale > 1)
+    f32 ui_zoom, ui_zoom_wanted;
+    ImGuiStyle base_style;
 } Game;
 
 // main.c
 void game_layout(Game* game);
+f32 game_ui_scale(const Game* game); // CSS pixels per UI pixel: the engine's scale times the game's
 // Reads `text` as a project. A good one is put in place (the battle back in deployment, the view remade for it) and its text
 // kept; a bad one is reported in the panel and changes nothing, unless no good project is in place yet. True when it was good.
 b32 game_load_project(Game* game, const char* name, const char* text, umm size);
@@ -131,6 +181,17 @@ b32 game_load_project(Game* game, const char* name, const char* text, umm size);
 // it still fits; a bad one changes nothing and says why in the panel. True when the change was made.
 b32 game_rules_editable(const Game* game);
 b32 game_set_rule(Game* game, const char* key, const f64* values, u32 count);
+// The lab's Unit section (docs/specs/unit_lab.md, "Editing the unit's values"): changing key `key` of the lab's unit def (in
+// `block`, a DefsBlock) to `values`, as game_set_rule does for a rule. The lab takes a good change as any other.
+b32 game_set_unit_value(Game* game, u32 block, const char* key, const f64* values, u32 count);
+// Entering (or leaving) the unit lab: only from deployment and with a good project. Entering starts a run.
+b32 game_set_mode(Game* game, GameMode mode);
+// After the panel changed game->lab_settings: the lab takes the change (lab_change).
+void game_lab_settings_changed(Game* game);
+// The lab's unit def: another one starts a run, its targets at its own default distance.
+void game_lab_choose_unit(Game* game, u32 def);
+// The battle the view draws and the frame runs: the round's, or the lab's.
+Battle* game_shown_battle(Game* game);
 // Whether a project button can be pressed now, and pressing it (it starts a dialog, read or write; false when it cannot).
 b32 game_project_action_allowed(const Game* game, ProjectAction action);
 b32 game_project_action(Game* game, ProjectAction action);
@@ -139,11 +200,26 @@ b32 game_project_action(Game* game, ProjectAction action);
 void view_build(Game* game); // materials, the shell mesh, the field's nodes, the camera and the effects, once
 void view_apply_project(Game* game); // the field, the unit meshes and the camera for the project in place
 void view_apply_rules(Game* game);   // the field after a rule changed; the camera starts over only if the field's size did
+void view_apply_units(Game* game);   // the unit meshes after a unit def changed
+void view_restart_camera(Game* game); // the battle's (or the lab's) first camera
 void view_input(Game* game); // the camera from drags and the wheel; taps place and remove units
 void view_on_tick(Game* game); // after each battle_tick: effects for its events and shells; clears the events
 void view_update(Game* game, f32 game_dt); // every frame: nodes follow the units and shells, lines, effects' clock
 void view_panel(Game* game);  // the Battle panel
 void view_draw_build_label(Game* game);
+// Shared with lab_view.c.
+void view_set_unit_mesh(Game* game, NvMeshId* mesh, const UnitDef* def); // made, or remade in its slot
+void view_draw_ring(NvRenderer* renderer, NvVec3 center, NvVec3 u, NvVec3 v, f32 radius, NvVec3 color);
+// The role filter and a button per unit def (with its squad and cost for `deployment`); true when one was pressed.
+b32 view_unit_buttons(Game* game, u32* selected, b32 enabled, b32 deployment);
+void view_time_controls(Game* game, b32 can_step_back, b32 can_step_forward);
+
+// lab_view.c
+void lab_view_start(Game* game);  // the camera on the lab's unit and targets
+void lab_view_draw(Game* game);    // every frame in the lab, before its units are drawn: its meshes kept up
+void lab_view_overlay(Game* game); // every frame in the lab, after the camera is placed: rings, paths and dimensions
+void lab_view_panel(Game* game);  // the panel's lab sections
+const UnitValueKey* lab_unit_value_key(u32 index); // NULL past the last
 
 // strings.c
 void game_strings_init(void);

@@ -1,6 +1,6 @@
 // The auto-battler executable (docs/specs/battle.md, "Executable"): it sets up the window, GPU, renderer and UI, reads the
-// project file, and runs the frame: the battle ticks at a fixed 30 Hz inside it, and the view (battle_view.c) draws
-// whatever state the ticks leave.
+// project file, and runs the frame: the battle, or the unit lab (docs/specs/unit_lab.md), ticks at a fixed 30 Hz inside it,
+// and the view (battle_view.c, lab_view.c) draws whatever state the ticks leave.
 
 #include "game.h"
 
@@ -22,12 +22,27 @@ global u8 scratch_memory[NV_MEGABYTES(4)];
 
 // The viewport and the panel never overlap, since input that starts in the viewport skips ImGui: the panel is on the right
 // of a wide canvas and under a tall one.
+f32 game_ui_scale(const Game* game)
+{
+    return game->imgui.ui_scale * game->ui_zoom;
+}
+
+// The style and font at `zoom` times the engine's, from its own copy so that zooming back and forth does not round away.
+internal void apply_ui_zoom(Game* game, f32 zoom)
+{
+    ImGuiStyle* style = igGetStyle();
+    *style = game->base_style;
+    ImGuiStyle_ScaleAllSizes(style, zoom);
+    style->FontScaleMain = game->base_style.FontScaleMain * zoom;
+    game->ui_zoom = game->ui_zoom_wanted = zoom;
+}
+
 void game_layout(Game* game)
 {
     f32 ratio = nv_window_pixel_ratio(&game->window);
     f32 width_css = (f32)game->gpu.width / ratio, height_css = (f32)game->gpu.height / ratio;
     if (width_css >= height_css * 1.1f) {
-        f32 panel_width_css = fminf(PANEL_WIDTH * game->imgui.ui_scale, width_css * 0.5f);
+        f32 panel_width_css = fminf(PANEL_WIDTH * game_ui_scale(game), width_css * 0.5f);
         game->layout.viewport = nv_window_framebuffer_rect_from_css(0.0f, 0.0f, width_css - panel_width_css, height_css, ratio);
         game->layout.panel = nv_window_framebuffer_rect_from_css(width_css - panel_width_css, 0.0f, width_css, height_css, ratio);
     } else {
@@ -55,6 +70,53 @@ internal void set_message(Game* game, b32 bad, const char* format, ...)
     game->project_message_bad = bad;
 }
 
+Battle* game_shown_battle(Game* game)
+{
+    return game->mode == GAME_MODE_LAB ? &game->lab.battle : &game->battle;
+}
+
+// A run of the lab over, with the settings it has (made for this project's first unit when it has none yet).
+internal void start_lab(Game* game)
+{
+    if (!game->lab_settings_set || game->lab_settings.unit_def >= game->defs.unit_count) {
+        game->lab_settings = lab_default_settings(&game->defs, game->selected_def < game->defs.unit_count ? game->selected_def : 0);
+        game->lab_settings_set = true;
+    }
+    lab_start(&game->lab, &game->defs, &game->lab_settings);
+    nv_vfx_clear(&game->vfx);
+    game->accumulator = 0.0f;
+}
+
+b32 game_set_mode(Game* game, GameMode mode)
+{
+    if (mode == game->mode)
+        return true;
+    if (mode == GAME_MODE_LAB && (!game->defs_ok || game->battle.phase != BATTLE_DEPLOY))
+        return false;
+    game->mode = mode;
+    if (mode == GAME_MODE_LAB)
+        start_lab(game);
+    view_restart_camera(game); // the lab's camera in the lab
+    return true;
+}
+
+void game_lab_settings_changed(Game* game)
+{
+    if (game->mode == GAME_MODE_LAB)
+        lab_change(&game->lab, &game->defs, &game->lab_settings);
+}
+
+void game_lab_choose_unit(Game* game, u32 def)
+{
+    if (def >= game->defs.unit_count || def == game->lab_settings.unit_def)
+        return;
+    game->lab_settings.unit_def = def;
+    game->lab_settings.distance = lab_default_settings(&game->defs, def).distance;
+    game_lab_settings_changed(game);
+    if (game->mode == GAME_MODE_LAB)
+        lab_view_start(game);
+}
+
 b32 game_load_project(Game* game, const char* name, const char* text, umm size)
 {
     umm mark = game->scratch.used;
@@ -80,9 +142,13 @@ b32 game_load_project(Game* game, const char* name, const char* text, umm size)
         nv_utf8_trim(game->project_name);
         ++game->project_loads;
         battle_init(&game->battle, &game->defs);
+        game->lab_settings_set = false; // they were for the old project's units
+        if (game->mode == GAME_MODE_LAB)
+            start_lab(game);
         view_apply_project(game);
     } else if (!game->defs_ok) {
         // Nothing good to keep: the panel shows this one's errors over an empty field.
+        game->mode = GAME_MODE_BATTLE;
         game->defs = *next;
         game->defs.rules = fallback_rules;
         game->project_size = 0;
@@ -104,6 +170,30 @@ b32 game_rules_editable(const Game* game)
     return game->project_size && game->battle.phase == BATTLE_DEPLOY && game->local_file.status != NV_LOCAL_FILE_BUSY;
 }
 
+// Puts a project's changed text in place (`next` is what it reads as): the player's squads stay where the new defs still allow
+// them (in the zone, within the supply), row by row, and the lab takes the change.
+internal void put_edited_project(Game* game, const char* text, umm size, const BattleDefs* next)
+{
+    Battle* battle = &game->battle;
+    umm mark = game->scratch.used;
+    u8* placed = nv_arena_push(&game->scratch, sizeof(battle->placed), 1);
+    memcpy(placed, battle->placed, sizeof(battle->placed));
+    game->defs = *next;
+    memcpy(game->project_text, text, size);
+    game->project_text[size] = 0;
+    game->project_size = size;
+    game->project_edited = true;
+    battle_init(battle, &game->defs);
+    for (u32 row = 0; row < BATTLE_MAX_ZONE_ROWS; ++row)
+        for (u32 x = 0; x < BATTLE_MAX_GRID_WIDTH; ++x)
+            if (placed[row * BATTLE_MAX_GRID_WIDTH + x])
+                battle_place(battle, placed[row * BATTLE_MAX_GRID_WIDTH + x] - 1u, (s32)x, (s32)row);
+    game->scratch.used = mark;
+    game_lab_settings_changed(game);
+    if (game->project_message_bad)
+        game->project_message[0] = 0; // a refused change's message is out of date
+}
+
 b32 game_set_rule(Game* game, const char* key, const f64* values, u32 count)
 {
     if (!game_rules_editable(game))
@@ -114,23 +204,28 @@ b32 game_set_rule(Game* game, const char* key, const f64* values, u32 count)
     umm size = defs_rule_set(game->project_text, game->project_size, key, values, count, text, PROJECT_MAX_SIZE);
     b32 ok = size && defs_read_project(next, game->project_name, text, size);
     if (ok) {
-        // The player's squads stay where the new rules still allow them (in the zone, within the supply), row by row.
-        Battle* battle = &game->battle;
-        u8* placed = nv_arena_push(&game->scratch, sizeof(battle->placed), 1);
-        memcpy(placed, battle->placed, sizeof(battle->placed));
-        game->defs = *next;
-        memcpy(game->project_text, text, size);
-        game->project_text[size] = 0;
-        game->project_size = size;
-        game->project_edited = true;
-        battle_init(battle, &game->defs);
-        for (u32 row = 0; row < BATTLE_MAX_ZONE_ROWS; ++row)
-            for (u32 x = 0; x < BATTLE_MAX_GRID_WIDTH; ++x)
-                if (placed[row * BATTLE_MAX_GRID_WIDTH + x])
-                    battle_place(battle, placed[row * BATTLE_MAX_GRID_WIDTH + x] - 1u, (s32)x, (s32)row);
+        put_edited_project(game, text, size, next);
         view_apply_rules(game);
-        if (game->project_message_bad)
-            game->project_message[0] = 0; // a refused change's message is out of date
+    } else {
+        set_message(game, true, T("Not changed: %s"), size ? next->first_error : T("the project's text is too large"));
+    }
+    game->scratch.used = mark;
+    return ok;
+}
+
+b32 game_set_unit_value(Game* game, u32 block, const char* key, const f64* values, u32 count)
+{
+    if (!game_rules_editable(game) || game->lab_settings.unit_def >= game->defs.unit_count)
+        return false;
+    umm mark = game->scratch.used;
+    char* text = NV_PUSH_ARRAY(&game->scratch, PROJECT_MAX_SIZE, char);
+    BattleDefs* next = NV_PUSH_STRUCT(&game->scratch, BattleDefs);
+    const char* unit = game->defs.units[game->lab_settings.unit_def].name;
+    umm size = defs_unit_set(game->project_text, game->project_size, unit, block, key, values, count, text, PROJECT_MAX_SIZE);
+    b32 ok = size && defs_read_project(next, game->project_name, text, size);
+    if (ok) {
+        put_edited_project(game, text, size, next);
+        view_apply_units(game);
     } else {
         set_message(game, true, T("Not changed: %s"), size ? next->first_error : T("the project's text is too large"));
     }
@@ -240,6 +335,8 @@ internal void frame(void* userdata)
     if (!gpu_frame.ok)
         return;
     NvGpuView target = gpu_frame.view;
+    if (game->ui_zoom_wanted != game->ui_zoom)
+        apply_ui_zoom(game, game->ui_zoom_wanted); // between frames: ImGui's style may not change inside one
     game_layout(game);
     game->imgui.view_rect = game->layout.viewport;
     nv_imgui_new_frame(&game->imgui, dt);
@@ -253,15 +350,22 @@ internal void frame(void* userdata)
     // two ticks the view draws. The effects follow the same clock.
     f32 game_dt = game->paused ? 0.0f : dt * game->speed;
     f32 effects_dt = game_dt;
-    Battle* battle = &game->battle;
+    Battle* battle = game_shown_battle(game);
+    b32 lab = game->mode == GAME_MODE_LAB;
     // A step moves the paused battle one tick: forward runs it (its effects get that tick's time), back replays the round to
-    // the tick before, and the effects, which cannot run backward, are cleared.
+    // the tick before, and the effects, which cannot run backward, are cleared. The lab steps the same way.
     if (game->defs_ok && game->step > 0 && battle->phase == BATTLE_FIGHT) {
-        battle_tick(battle);
+        if (lab)
+            lab_tick(&game->lab);
+        else
+            battle_tick(battle);
         view_on_tick(game);
         effects_dt = BATTLE_TICK_SECONDS; // not the battle's clock: that stays paused
     } else if (game->defs_ok && game->step < 0 && battle->phase != BATTLE_DEPLOY && battle->tick > 0) {
-        battle_seek(battle, battle->tick - 1);
+        if (lab)
+            lab_seek(&game->lab, battle->tick - 1);
+        else
+            battle_seek(battle, battle->tick - 1);
         nv_vfx_clear(&game->vfx);
     }
     game->step = 0;
@@ -273,7 +377,10 @@ internal void frame(void* userdata)
                 game->accumulator = 0.0f; // too far behind: run slower rather than spiral
                 break;
             }
-            battle_tick(battle);
+            if (lab)
+                lab_tick(&game->lab);
+            else
+                battle_tick(battle);
             view_on_tick(game);
             game->accumulator -= BATTLE_TICK_SECONDS;
         }
@@ -295,7 +402,7 @@ internal void frame(void* userdata)
 // in place (the packed one included), 15 whether Save would write the kept local file in place, 16 the grid's width, 17 the
 // local file's status (NvLocalFileStatus, as last polled), 18 whether the project has edits not yet saved, 19 the round's
 // length in ticks, 20 the declared roles, 21 the role filter (a mask), 22 the unit buttons the panel drew last frame, 23 the air
-// units alive.
+// units alive, 24 the UI's scale in hundredths (the game's, on top of the engine's).
 NV_DEBUG_EXPORT int battle_debug(int which)
 {
     const Game* game = &game_state;
@@ -323,6 +430,7 @@ NV_DEBUG_EXPORT int battle_debug(int which)
     case 20: return (int)game->defs.role_count;
     case 21: return (int)game->role_filter;
     case 22: return (int)game->unit_buttons_shown;
+    case 24: return (int)(game->ui_zoom * 100.0f + 0.5f);
     case 23: {
         u32 air = 0;
         for (u32 i = 1; i <= battle->unit_count; ++i)
@@ -451,6 +559,116 @@ NV_DEBUG_EXPORT float battle_debug_project(float x, float y, float z, int axis)
     f32 screen_y = (f32)out->image.y + (0.5f - p.y / w * 0.5f) * (f32)out->height * out->pixel_height;
     return (axis ? screen_y : screen_x) / nv_window_pixel_ratio(&game->window);
 }
+
+// The unit lab, for tests (docs/specs/unit_lab.md, "Debug exports"). Module._battle_debug_lab(n): 0 whether the lab is shown,
+// 1 its tick, 2 shots, 3 hits, 4 misses, 5 ground target kills, 6 air target kills, 7 the damage dealt (whole), 8 the state's
+// hash, 9 the lab's unit def, 10 the unit's target (0 none, 1 the ground target, 2 the air one), 11 the changes recorded,
+// 12 the changes since the results were reset, 13 whether too many changes went in to step back, 14 what the View section
+// hides (a mask of LAB_SHOW_*).
+NV_DEBUG_EXPORT int battle_debug_lab(int which)
+{
+    const Lab* lab = &game_state.lab;
+    const LabResults* results = &lab->results;
+    switch (which) {
+    case 0: return game_state.mode == GAME_MODE_LAB;
+    case 1: return (int)lab->battle.tick;
+    case 2: return (int)results->shots;
+    case 3: return (int)results->hits;
+    case 4: return (int)lab_misses(lab);
+    case 5: return (int)results->targets[LAB_GROUND].kills;
+    case 6: return (int)results->targets[LAB_AIR].kills;
+    case 7: return (int)(results->targets[LAB_GROUND].damage + results->targets[LAB_AIR].damage);
+    case 8: return (int)battle_hash(&lab->battle);
+    case 9: return (int)game_state.lab_settings.unit_def;
+    case 10: {
+        u32 target = lab->battle.units[LAB_SLOT_UNIT].target.index;
+        return target ? (int)(target - LAB_SLOT_UNIT) : 0;
+    }
+    case 11: return (int)lab->change_count;
+    case 12: return (int)results->changes;
+    case 14: return (int)game_state.lab_hidden;
+    default: return lab->changes_full;
+    }
+}
+
+// Asks for the UI's scale in hundredths as the panel's UI scale combo does; it is taken at the start of the next frame.
+NV_DEBUG_EXPORT void battle_debug_set_ui_zoom(int percent)
+{
+    game_state.ui_zoom_wanted = nv_clamp_f32((f32)percent / 100.0f, 0.5f, 4.0f);
+}
+
+// Shows the lab (1) or the battle (0) as the panel's mode buttons do; 1 when it did.
+NV_DEBUG_EXPORT int battle_debug_lab_enter(int on)
+{
+    return game_set_mode(&game_state, on ? GAME_MODE_LAB : GAME_MODE_BATTLE);
+}
+
+// Changes one of the lab's settings as its panel does, `value` in hundredths (a switch is 0 or 100): 0 the unit def, 1 walk into
+// range, 2 distance, 3 targets move, 4 move speed, 5 move width, 6 target health, 7 target armor, 8 target radius, 9 target
+// height, 10 air altitude, 11 respawn delay, 12 restart on change; and 13 what the View section hides (a mask of LAB_SHOW_*, times
+// 100), which is no change of the run. 0 for no such setting.
+NV_DEBUG_EXPORT int battle_debug_lab_set(int setting, int value)
+{
+    Game* game = &game_state;
+    LabSettings* settings = &game->lab_settings;
+    f32 number = (f32)value / 100.0f;
+    b32 on = value != 0;
+    switch (setting) {
+    case 0: game_lab_choose_unit(game, (u32)(value / 100)); return 1;
+    case 1: settings->walk = on; break;
+    case 2: settings->distance = number; break;
+    case 3: settings->targets_move = on; break;
+    case 4: settings->move_speed = number; break;
+    case 5: settings->move_width = number; break;
+    case 6: settings->target_health = number; break;
+    case 7: settings->target_armor = number; break;
+    case 8: settings->target_radius = number; break;
+    case 9: settings->target_height = number; break;
+    case 10: settings->air_altitude = number; break;
+    case 11: settings->respawn_delay = number; break;
+    case 12: settings->restart_on_change = on; break;
+    case 13: game->lab_hidden = (u32)(value / 100); return 1;
+    default: return 0;
+    }
+    game_lab_settings_changed(game);
+    return 1;
+}
+
+// Presses a lab button: 0 Restart, 1 Reset results.
+NV_DEBUG_EXPORT void battle_debug_lab_action(int action)
+{
+    Game* game = &game_state;
+    if (game->mode != GAME_MODE_LAB)
+        return;
+    if (action == 0) {
+        lab_start(&game->lab, &game->defs, &game->lab_settings);
+        nv_vfx_clear(&game->vfx);
+    } else {
+        lab_reset_results(&game->lab);
+    }
+}
+
+// Runs the lab `ticks` ticks at once, with the view's effects.
+NV_DEBUG_EXPORT void battle_debug_lab_run(int ticks)
+{
+    if (game_state.mode != GAME_MODE_LAB)
+        return;
+    for (int i = 0; i < ticks; ++i) {
+        lab_tick(&game_state.lab);
+        view_on_tick(&game_state);
+    }
+}
+
+// Changes a value of the lab's unit def as its Unit section does: key `index` of lab_unit_value_key (the vector `muzzle` is
+// not one this takes), `value` in hundredths. 1 when the change was made.
+NV_DEBUG_EXPORT int battle_debug_set_unit_value(int index, int value)
+{
+    const UnitValueKey* key = lab_unit_value_key((u32)index);
+    if (!key || key->kind == UNIT_VALUE_VECTOR)
+        return 0;
+    f64 number = (f64)value / 100.0;
+    return game_set_unit_value(&game_state, key->block, key->key, &number, 1);
+}
 #endif
 
 #if defined(_WIN32) && !defined(NDEBUG)
@@ -469,6 +687,13 @@ internal const NvDebugCall battle_debug_calls[] = {
     {"set_role_filter", "i>v", (void*)battle_debug_set_role_filter},
     {"project_action", "i>i", (void*)battle_debug_project_action},
     {"load_test", ">i", (void*)battle_debug_load_test},
+    {"lab", "i>i", (void*)battle_debug_lab},
+    {"lab_enter", "i>i", (void*)battle_debug_lab_enter},
+    {"lab_set", "ii>i", (void*)battle_debug_lab_set},
+    {"lab_action", "i>v", (void*)battle_debug_lab_action},
+    {"lab_run", "i>v", (void*)battle_debug_lab_run},
+    {"set_unit_value", "ii>i", (void*)battle_debug_set_unit_value},
+    {"set_ui_zoom", "i>v", (void*)battle_debug_set_ui_zoom},
 };
 
 internal NvRect debug_script_viewport(void* user)
@@ -499,6 +724,10 @@ int main(void)
     nv_strings_set_language(nv_strings_system_language());
 
     b32 touch = game->imgui.ui_scale > 1.0f;
+    game->touch = touch;
+    // The UI's scale: a desktop's starts larger (docs/specs/battle.md, "Executable"); a touch screen keeps the engine's.
+    game->base_style = *igGetStyle();
+    apply_ui_zoom(game, touch ? 1.0f : UI_ZOOM_DESKTOP);
     // Shadows (docs/specs/shadows.md) as in the sandbox: lighter on touch screens. The distance follows the camera
     // (view_update).
     game->renderer.shadows = (NvShadowSettings){

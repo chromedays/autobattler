@@ -1,9 +1,9 @@
 # Tests that need no browser. Emscripten builds them for Node, which ctest runs them with; on Windows they are plain executables.
 
-# The auto-battler's rules and definition files (src/battle.c, defs.c): no GPU. It reads the repository's data/ directly:
-# Node reads it from the disk with NODERAWFS, a native executable just opens it.
+# The auto-battler's rules, definition files and unit lab (src/battle.c, defs.c, lab.c): no GPU. It reads the repository's
+# data/ directly: Node reads it from the disk with NODERAWFS, a native executable just opens it.
 add_executable(battle_test battle_test.c ${PROJECT_SOURCE_DIR}/src/battle.c ${PROJECT_SOURCE_DIR}/src/defs.c
-    ${PROJECT_SOURCE_DIR}/engine/engine/log.c ${PROJECT_SOURCE_DIR}/engine/engine/text.c)
+    ${PROJECT_SOURCE_DIR}/src/lab.c ${PROJECT_SOURCE_DIR}/engine/engine/log.c ${PROJECT_SOURCE_DIR}/engine/engine/text.c)
 target_include_directories(battle_test PRIVATE ${PROJECT_SOURCE_DIR}/src ${PROJECT_SOURCE_DIR}/engine)
 target_compile_definitions(battle_test PRIVATE BATTLE_DATA_DIR="${PROJECT_SOURCE_DIR}/data")
 if(NV_WEB)

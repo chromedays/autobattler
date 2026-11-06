@@ -1,6 +1,7 @@
 // Drawing the battle (docs/specs/battle.md, "Executable"): the field, units and shells as nodes, effects for the
 // battle's events, the camera, deployment input and the Battle panel. The rules are battle.c; nothing here changes them
-// but through battle_place, battle_remove, battle_start and battle_retry.
+// but through battle_place, battle_remove, battle_start and battle_retry. The unit lab (lab_view.c) is drawn by the same
+// code from its own battle (game_shown_battle), with its own meshes.
 
 #include "game.h"
 
@@ -91,7 +92,7 @@ internal void make_effects(Game* game)
 // that no tick's events or stretch are missed when several run in a frame.
 void view_on_tick(Game* game)
 {
-    Battle* battle = &game->battle;
+    Battle* battle = game_shown_battle(game);
     NvVfx* vfx = &game->vfx;
     const Effects* effects = &game->effects;
     for (u32 i = 0; i < battle->event_count; ++i) {
@@ -128,7 +129,7 @@ internal NvMaterialId add_color(Game* game, f32 r, f32 g, f32 b)
 
 // A unit's mesh: a capsule body, and a cone in front for its facing (+Z in the unit's space). The body is as wide as the unit
 // but no wider than it is tall, so a squat unit is a rounded blob.
-internal void set_unit_mesh(Game* game, u32 index, const UnitDef* def)
+void view_set_unit_mesh(Game* game, NvMeshId* slot, const UnitDef* def)
 {
     NvVertex vertices[NV_MESH_CAPSULE_VERTICES(16, 6) + NV_MESH_CONE_VERTICES(12)];
     u32 indices[NV_MESH_CAPSULE_INDICES(16, 6) + NV_MESH_CONE_INDICES(12)];
@@ -155,12 +156,10 @@ internal void set_unit_mesh(Game* game, u32 index, const UnitDef* def)
     }
     NvMeshData data = nv_mesh_builder_data(&mesh);
     // A project loaded again remakes the meshes in the slots it has (nv_renderer_replace_mesh), so loads use up none.
-    if (index < game->unit_meshes_made) {
-        nv_renderer_replace_mesh(&game->renderer, game->unit_meshes[index], &data);
-    } else {
-        game->unit_meshes[index] = nv_renderer_add_mesh(&game->renderer, &data);
-        game->unit_meshes_made = index + 1;
-    }
+    if (slot->index)
+        nv_renderer_replace_mesh(&game->renderer, *slot, &data);
+    else
+        *slot = nv_renderer_add_mesh(&game->renderer, &data);
 }
 
 // The plane `field` (FIELD_GROUND, FIELD_PLAYER_ZONE, FIELD_ENEMY_ZONE) at its size and place, its mesh remade in its slot.
@@ -173,10 +172,12 @@ internal void set_plane(Game* game, u32 field, f32 half_x, f32 half_z, NvVec3 po
     nv_mesh_append_plane(&mesh, half_x, half_z);
     NvMeshData data = nv_mesh_builder_data(&mesh);
     NvNode* node = nv_scene_get(game->scene, game->field_nodes[field]);
-    if (node->mesh.index)
-        nv_renderer_replace_mesh(&game->renderer, node->mesh, &data);
+    // The mesh is kept apart from the node: the lab hides the zones by taking it off (view_update).
+    if (game->field_meshes[field].index)
+        nv_renderer_replace_mesh(&game->renderer, game->field_meshes[field], &data);
     else
-        node->mesh = nv_renderer_add_mesh(&game->renderer, &data);
+        game->field_meshes[field] = nv_renderer_add_mesh(&game->renderer, &data);
+    node->mesh = game->field_meshes[field];
     node->position = position;
 }
 
@@ -216,13 +217,15 @@ internal void apply_field(Game* game, b32 restart_camera)
     game->hover_shown = false;
     nv_vfx_clear(&game->vfx);
     game->accumulator = 0.0f;
+    if (restart_camera && game->mode == GAME_MODE_LAB)
+        lab_view_start(game);
 }
 
 void view_apply_project(Game* game)
 {
     apply_field(game, true);
     for (u32 i = 0; i < game->defs.unit_count; ++i)
-        set_unit_mesh(game, i, &game->defs.units[i]);
+        view_set_unit_mesh(game, &game->unit_meshes[i], &game->defs.units[i]);
     if (game->selected_def >= game->defs.unit_count)
         game->selected_def = 0;
     game->role_filter = 0; // the bits are the new project's roles
@@ -231,6 +234,17 @@ void view_apply_project(Game* game)
 void view_apply_rules(Game* game)
 {
     apply_field(game, false);
+}
+
+void view_apply_units(Game* game)
+{
+    for (u32 i = 0; i < game->defs.unit_count; ++i)
+        view_set_unit_mesh(game, &game->unit_meshes[i], &game->defs.units[i]);
+}
+
+void view_restart_camera(Game* game)
+{
+    apply_field(game, true);
 }
 
 void view_build(Game* game)
@@ -255,6 +269,8 @@ void view_build(Game* game)
 
     game->team_materials[TEAM_PLAYER] = add_color(game, 0.1f, 0.35f, 1.0f);
     game->team_materials[TEAM_ENEMY] = add_color(game, 1.0f, 0.18f, 0.12f);
+    game->target_material = add_color(game, 0.55f, 0.55f, 0.58f);
+    game->target_out_of_reach_material = add_color(game, 0.26f, 0.26f, 0.3f);
     game->shell_material = add_color(game, 1.0f, 0.75f, 0.25f);
     NvVertex vertices[NV_MESH_SPHERE_VERTICES(8, 6)];
     u32 indices[NV_MESH_SPHERE_INDICES(8, 6)];
@@ -331,7 +347,8 @@ void view_input(Game* game)
 
     // What a tap under the mouse pointer would do (a touch screen has none).
     game->hover_shown = false;
-    if (game->imgui.ui_scale <= 1.0f && game->defs_ok && game->battle.phase == BATTLE_DEPLOY) {
+    b32 deploying = game->mode == GAME_MODE_BATTLE && game->defs_ok && game->battle.phase == BATTLE_DEPLOY;
+    if (!game->touch && deploying) {
         ImVec2_c mouse = igGetIO_Nil()->MousePos;
         const NvRect* v = &game->layout.viewport;
         if (mouse.x * ratio >= (f32)v->x && mouse.x * ratio < (f32)(v->x + v->width) && mouse.y * ratio >= (f32)v->y &&
@@ -345,7 +362,7 @@ void view_input(Game* game)
         }
     }
 
-    if (in->tapped && game->defs_ok && game->battle.phase == BATTLE_DEPLOY) {
+    if (in->tapped && deploying) {
         ZonePoint point = zone_point_at(game, in->tap_x, in->tap_y);
         if (point.ok) {
             DeployTarget target = deploy_target(game, point);
@@ -373,9 +390,15 @@ internal void draw_zone_grid(NvRenderer* renderer, const BattleRules* rules, u32
         nv_renderer_debug_line(renderer, cell_corner(rules, x, first_row, 0.03f), cell_corner(rules, x, first_row + rules->zone_rows, 0.03f), color);
 }
 
-internal void draw_ring(NvRenderer* renderer, NvVec3 center, NvVec3 u, NvVec3 v, f32 radius, NvVec3 color)
+// A circle of debug lines. Its segments are about RING_SEGMENT_LENGTH long, so a weapon's range (tens of meters) is round
+// too, between RING_MIN_SEGMENTS (a shield) and RING_MAX_SEGMENTS (which keeps a long range within the debug lines).
+#define RING_SEGMENT_LENGTH 0.5f
+#define RING_MIN_SEGMENTS   20
+#define RING_MAX_SEGMENTS   256
+void view_draw_ring(NvRenderer* renderer, NvVec3 center, NvVec3 u, NvVec3 v, f32 radius, NvVec3 color)
 {
-    const u32 segments = 20;
+    f32 wanted = ceilf(2.0f * NV_PI * radius / RING_SEGMENT_LENGTH);
+    u32 segments = (u32)nv_clamp_f32(wanted, (f32)RING_MIN_SEGMENTS, (f32)RING_MAX_SEGMENTS);
     NvVec3 previous = nv_vec3_add(center, nv_vec3_scale(u, radius));
     for (u32 i = 1; i <= segments; ++i) {
         f32 angle = (f32)i * (2.0f * NV_PI / (f32)segments);
@@ -435,26 +458,33 @@ internal NvNode* shell_node(Game* game, u32 index)
 // matrices and the camera are brought up to date.
 void view_update(Game* game, f32 game_dt)
 {
-    const Battle* battle = &game->battle;
+    const Battle* battle = game_shown_battle(game);
+    b32 lab = game->mode == GAME_MODE_LAB;
     NvRenderer* renderer = &game->renderer;
     NvNode* camera = nv_scene_get(game->scene, game->camera);
     // Between the last two ticks while it runs; paused (and stepping), exactly at the last tick.
     f32 alpha = battle->phase == BATTLE_FIGHT && !game->paused ? nv_clamp_f32(game->accumulator / BATTLE_TICK_SECONDS, 0.0f, 1.0f) : 1.0f;
     NvVec3 screen_right = nv_quat_rotate(camera->rotation, nv_vec3(1.0f, 0.0f, 0.0f));
+    if (lab)
+        lab_view_draw(game); // its meshes first, for the units below
 
     for (u32 slot = 1; slot <= battle->unit_count; ++slot) {
         const Unit* unit = &battle->units[slot];
         const UnitDef* def = &battle->defs->units[unit->def];
         NvNode* node = unit_node(game, slot);
         b32 alive = !(unit->flags & UNIT_DEAD);
-        node->mesh = alive ? game->unit_meshes[unit->def] : (NvMeshId){0};
+        node->mesh = !alive ? (NvMeshId){0} : lab ? game->lab_meshes[unit->def] : game->unit_meshes[unit->def];
         node->material = game->team_materials[unit->team];
+        if (unit->flags & UNIT_DUMMY) { // a lab target: grey, darker when the unit cannot hit its layer
+            b32 reachable = battle->defs->units[LAB_DEF_UNIT].weapon.targets & (1u << def->layer);
+            node->material = reachable ? game->target_material : game->target_out_of_reach_material;
+        }
         NvVec3 position = nv_vec3(lerp(unit->previous_position.x, unit->position.x, alpha), unit->position.y,
                                   lerp(unit->previous_position.z, unit->position.z, alpha));
         node->position = position;
         node->rotation = nv_quat_axis_angle(nv_vec3(0.0f, 1.0f, 0.0f), lerp_angle(unit->previous_yaw, unit->yaw, alpha));
-        // A flier's shadow-like line down to the ground, so its height reads.
-        if (alive && def->layer == UNIT_LAYER_AIR)
+        // A flier's shadow-like line down to the ground, so its height reads (the lab draws a dimension line instead).
+        if (alive && def->layer == UNIT_LAYER_AIR && !lab)
             nv_renderer_debug_line(renderer, nv_vec3(position.x, 0.0f, position.z), position, nv_vec3(0.35f, 0.35f, 0.4f));
         if (!alive)
             continue;
@@ -465,9 +495,9 @@ void view_update(Game* game, f32 game_dt)
                 NvVec3 color = nv_vec3_scale(nv_vec3(0.3f, 0.8f, 1.0f), 0.3f + 0.7f * share);
                 NvVec3 center = nv_vec3_add(position, nv_vec3(0.0f, def->height * 0.5f, 0.0f));
                 f32 radius = def->ability.shield.radius;
-                draw_ring(renderer, center, nv_vec3(1, 0, 0), nv_vec3(0, 0, 1), radius, color);
-                draw_ring(renderer, center, nv_vec3(1, 0, 0), nv_vec3(0, 1, 0), radius, color);
-                draw_ring(renderer, center, nv_vec3(0, 1, 0), nv_vec3(0, 0, 1), radius, color);
+                view_draw_ring(renderer, center, nv_vec3(1, 0, 0), nv_vec3(0, 0, 1), radius, color);
+                view_draw_ring(renderer, center, nv_vec3(1, 0, 0), nv_vec3(0, 1, 0), radius, color);
+                view_draw_ring(renderer, center, nv_vec3(0, 1, 0), nv_vec3(0, 0, 1), radius, color);
             }
         }
     }
@@ -485,7 +515,11 @@ void view_update(Game* game, f32 game_dt)
     for (u32 i = battle->projectile_count; i < game->shell_nodes_made; ++i)
         nv_scene_get(game->scene, game->shell_nodes[i])->mesh = (NvMeshId){0};
 
-    if (battle->phase == BATTLE_DEPLOY && game->defs_ok) {
+    // The lab has no zones.
+    for (u32 field = FIELD_PLAYER_ZONE; field <= FIELD_ENEMY_ZONE; ++field)
+        nv_scene_get(game->scene, game->field_nodes[field])->mesh = lab ? (NvMeshId){0} : game->field_meshes[field];
+
+    if (!lab && battle->phase == BATTLE_DEPLOY && game->defs_ok) {
         const BattleRules* rules = &battle->defs->rules;
         draw_zone_grid(renderer, rules, 0, nv_vec3(0.25f, 0.42f, 0.75f));
         draw_zone_grid(renderer, rules, battle_enemy_first_row(rules), nv_vec3(0.6f, 0.25f, 0.2f));
@@ -510,6 +544,8 @@ void view_update(Game* game, f32 game_dt)
     nv_vfx_update(&game->vfx, game_dt); // the game clock: a pause freezes the effects, a speed-up hurries them
     nv_scene_update(game->scene);
     nv_orbit_camera_place(&game->orbit, camera);
+    if (lab)
+        lab_view_overlay(game);
     // The shadow map covers the view up to this distance; panning and turning keep it, so shadows do not shimmer then.
     renderer->shadows.distance = game->orbit.distance * SHADOW_DISTANCE_PER_CAMERA_DISTANCE;
 }
@@ -565,16 +601,23 @@ internal void rule_integers(Game* game, const char* key, const char* label, u32 
 }
 
 // The rules of the project in place, editable before a round. A change is put in place at once; Save writes it to the file.
+// The unit lab (docs/specs/unit_lab.md, "Panel") shows only the rules that change how a unit fights there, under a header of
+// its own that starts closed: it has no zones, no round time, and a field whose size only bounds its targets' distance.
 internal void rules_section(Game* game)
 {
-    if (!game->project_size || !igCollapsingHeader_TreeNodeFlags(TL("Rules"), ImGuiTreeNodeFlags_DefaultOpen))
+    b32 lab = game->mode == GAME_MODE_LAB;
+    char header[64];
+    snprintf(header, sizeof(header), "%s###%s", T("Rules"), lab ? "lab_rules" : "Rules");
+    if (!game->project_size || !igCollapsingHeader_TreeNodeFlags(header, lab ? 0 : ImGuiTreeNodeFlags_DefaultOpen))
         return;
     igBeginDisabled(!game_rules_editable(game));
     igPushItemWidth(igGetFontSize() * 8.0f);
-    rule_number(game, "cell_size", TL("Cell size (m)"), 0.01f, 0.1f, 10.0f, "%.2f");
-    rule_integers(game, "grid", TL("Grid (across, long)"), 2, 0.1f, 1, BATTLE_MAX_GRID_LENGTH);
-    rule_integers(game, "zone_rows", TL("Zone rows"), 1, 0.1f, 1, BATTLE_MAX_ZONE_ROWS);
-    rule_number(game, "round_time", TL("Round time (s)"), 0.5f, 1.0f, 600.0f, "%.1f");
+    if (!lab) {
+        rule_number(game, "cell_size", TL("Cell size (m)"), 0.01f, 0.1f, 10.0f, "%.2f");
+        rule_integers(game, "grid", TL("Grid (across, long)"), 2, 0.1f, 1, BATTLE_MAX_GRID_LENGTH);
+        rule_integers(game, "zone_rows", TL("Zone rows"), 1, 0.1f, 1, BATTLE_MAX_ZONE_ROWS);
+        rule_number(game, "round_time", TL("Round time (s)"), 0.5f, 1.0f, 600.0f, "%.1f");
+    }
     rule_number(game, "gravity", TL("Gravity (m/s²)"), 0.05f, 0.1f, 100.0f, "%.2f");
     rule_number(game, "retarget_interval", TL("Retarget interval (s)"), 0.01f, 0.01f, 10.0f, "%.2f");
     rule_number(game, "stop_fraction", TL("Stop fraction"), 0.005f, 0.01f, 1.0f, "%.3f");
@@ -615,20 +658,168 @@ internal void start_over(Game* game)
     game->accumulator = 0.0f;
 }
 
+// The role filter and the unit types: one button each, the chosen one lit. For deployment a squad of several says how many and
+// what it costs ("Crawler x6 (100)"); otherwise a button is the name alone. A unit type that lacks a lit role is left out; the
+// chosen one stays chosen. True when a button was pressed.
+b32 view_unit_buttons(Game* game, u32* selected, b32 enabled, b32 deployment)
+{
+    const BattleDefs* defs = &game->defs;
+    if (defs->role_count) {
+        igText("%s", T("Roles:"));
+        for (u32 r = 0; r < defs->role_count; ++r) {
+            char label[BATTLE_NAME_SIZE + 8];
+            snprintf(label, sizeof(label), "%s###role%u", defs->roles[r], r);
+            if (r)
+                same_line_if_fits(label);
+            b32 lit = (game->role_filter >> r) & 1u;
+            if (lit)
+                igPushStyleColor_Vec4(ImGuiCol_Button, igGetStyle()->Colors[ImGuiCol_ButtonActive]);
+            if (igButton(label, (ImVec2_c){0, 0}))
+                game->role_filter ^= 1u << r;
+            if (lit)
+                igPopStyleColor(1);
+        }
+    }
+    b32 pressed = false;
+    igBeginDisabled(!enabled);
+    u32 shown = 0;
+    for (u32 i = 0; i < defs->unit_count; ++i) {
+        if ((defs->unit_roles[i] & game->role_filter) != game->role_filter)
+            continue;
+        const UnitDef* def = &defs->units[i];
+        char label[BATTLE_NAME_SIZE + 32];
+        if (!deployment)
+            snprintf(label, sizeof(label), "%s###unit%u", def->name, i);
+        else if (def->squad_size > 1)
+            snprintf(label, sizeof(label), "%s x%u (%u)###unit%u", def->name, def->squad_size, def->cost, i);
+        else
+            snprintf(label, sizeof(label), "%s (%u)###unit%u", def->name, def->cost, i);
+        if (shown++)
+            same_line_if_fits(label);
+        b32 chosen = *selected == i;
+        if (chosen)
+            igPushStyleColor_Vec4(ImGuiCol_Button, igGetStyle()->Colors[ImGuiCol_ButtonActive]);
+        if (igButton(label, (ImVec2_c){0, 0})) {
+            *selected = i;
+            pressed = true;
+        }
+        if (chosen)
+            igPopStyleColor(1);
+    }
+    game->unit_buttons_shown = shown;
+    igEndDisabled();
+    if (defs->role_count) {
+        char names[BATTLE_MAX_ROLES * (BATTLE_NAME_SIZE + 2)];
+        format_roles(defs, defs->unit_roles[*selected], names, sizeof(names));
+        igText(T("Roles: %s"), names[0] ? names : T("none"));
+    }
+    // The chosen unit's layer, and the layers its weapon can hit.
+    const UnitDef* def = &defs->units[*selected];
+    char targets[32] = "";
+    if (def->weapon.targets & TARGET_GROUND)
+        snprintf(targets, sizeof(targets), "%s", T("Ground"));
+    if (def->weapon.targets & TARGET_AIR) {
+        umm used = strlen(targets);
+        snprintf(targets + used, sizeof(targets) - used, "%s%s", used ? ", " : "", T("Air"));
+    }
+    igText(T("Layer: %s, targets: %s"), def->layer == UNIT_LAYER_AIR ? T("Air") : T("Ground"), targets);
+    return pressed;
+}
+
+// The game clock's speed (the rules run the same ticks at any speed, only more or fewer a frame), and one tick back or
+// forward, paused; holding a step button runs through the ticks.
+void view_time_controls(Game* game, b32 can_step_back, b32 can_step_forward)
+{
+    b32 paused = game->paused;
+    if (paused)
+        igPushStyleColor_Vec4(ImGuiCol_Button, igGetStyle()->Colors[ImGuiCol_ButtonActive]);
+    if (igButton(TL("Pause"), (ImVec2_c){0, 0}))
+        game->paused = !game->paused;
+    if (paused)
+        igPopStyleColor(1);
+    const f32 speeds[4] = {0.5f, 1.0f, 2.0f, 4.0f};
+    const char* speed_labels[4] = {"0.5x###speed0", "1x###speed1", "2x###speed2", "4x###speed3"};
+    for (u32 i = 0; i < NV_ARRAY_COUNT(speeds); ++i) {
+        igSameLine(0.0f, -1.0f);
+        b32 lit = !game->paused && game->speed == speeds[i];
+        if (lit)
+            igPushStyleColor_Vec4(ImGuiCol_Button, igGetStyle()->Colors[ImGuiCol_ButtonActive]);
+        if (igButton(speed_labels[i], (ImVec2_c){0, 0})) {
+            game->speed = speeds[i];
+            game->paused = false;
+        }
+        if (lit)
+            igPopStyleColor(1);
+    }
+
+    igBeginDisabled(!can_step_back);
+    if (step_button(TL("< Tick"))) {
+        game->step = -1;
+        game->paused = true;
+    }
+    igEndDisabled();
+    igSameLine(0.0f, -1.0f);
+    igBeginDisabled(!can_step_forward);
+    if (step_button(TL("Tick >"))) {
+        game->step = 1;
+        game->paused = true;
+    }
+    igEndDisabled();
+}
+
+// Battle or Unit Lab, the chosen one lit. The lab opens only from deployment.
+internal void mode_buttons(Game* game)
+{
+    const char* labels[2] = {TL("Battle"), TL("Unit Lab")};
+    for (u32 mode = 0; mode < 2; ++mode) {
+        if (mode)
+            igSameLine(0.0f, -1.0f);
+        b32 lit = game->mode == mode;
+        b32 allowed = mode == GAME_MODE_BATTLE || (game->defs_ok && game->battle.phase == BATTLE_DEPLOY);
+        if (lit)
+            igPushStyleColor_Vec4(ImGuiCol_Button, igGetStyle()->Colors[ImGuiCol_ButtonActive]);
+        igBeginDisabled(!allowed && !lit);
+        if (igButton(labels[mode], (ImVec2_c){0, 0}) && !lit)
+            game_set_mode(game, (GameMode)mode);
+        igEndDisabled();
+        if (lit)
+            igPopStyleColor(1);
+    }
+    if (game->mode == GAME_MODE_BATTLE && game->defs_ok && game->battle.phase != BATTLE_DEPLOY) {
+        igPushStyleColor_Vec4(ImGuiCol_Text, igGetStyle()->Colors[ImGuiCol_TextDisabled]);
+        igTextWrapped("%s", T("The unit lab opens in deployment (Retry goes back to it)."));
+        igPopStyleColor(1);
+    }
+}
+
 void view_panel(Game* game)
 {
     Battle* battle = &game->battle;
+    b32 lab = game->mode == GAME_MODE_LAB;
     if (nv_imgui_begin_panel(&game->imgui, "Battle", game->layout.panel)) {
         const char* phases[3] = {T("Deployment"), T("Fight"), T("Result")};
-        igText("%s", T("Battle"));
-        igSameLine(0.0f, -1.0f);
-        igTextDisabled("%s", phases[battle->phase]);
+        igText("%s", lab ? T("Unit Lab") : T("Battle"));
+        if (!lab) {
+            igSameLine(0.0f, -1.0f);
+            igTextDisabled("%s", phases[battle->phase]);
+        }
 
         const char* languages[NV_LANGUAGE_COUNT] = {"English", "한국어"};
         s32 language = (s32)nv_strings_language();
         igSetNextItemWidth(igGetFontSize() * 8.0f);
         if (igCombo_Str_arr(TL("Language"), &language, languages, NV_LANGUAGE_COUNT, -1))
             nv_strings_set_language((NvLanguage)language);
+        // The UI's scale on top of the engine's; taken at the next frame's start (main.c).
+        const f32 zooms[UI_ZOOM_CHOICES] = {1.0f, 1.25f, 1.5f, 1.75f, 2.0f, 2.5f};
+        const char* zoom_names[UI_ZOOM_CHOICES] = {"100%", "125%", "150%", "175%", "200%", "250%"};
+        s32 zoom = 0;
+        for (u32 i = 0; i < UI_ZOOM_CHOICES; ++i)
+            if (fabsf(zooms[i] - game->ui_zoom) < 0.01f)
+                zoom = (s32)i;
+        igSetNextItemWidth(igGetFontSize() * 8.0f);
+        if (igCombo_Str_arr(TL("UI scale"), &zoom, zoom_names, UI_ZOOM_CHOICES, -1))
+            game->ui_zoom_wanted = zooms[zoom];
+        mode_buttons(game);
 
         // The project: where the rules, units and stage came from, and opening and saving it as a file on this computer
         // (docs/specs/abproj.md, "Loading and saving"). Save writes the text it was read from, comments and all.
@@ -665,65 +856,12 @@ void view_panel(Game* game)
         }
 
         igSeparator();
-        // The role filter: a unit type shows when it has every role lit here. Only roles the file declares are offered.
-        if (battle->defs->role_count) {
-            igText("%s", T("Roles:"));
-            for (u32 r = 0; r < battle->defs->role_count; ++r) {
-                char label[BATTLE_NAME_SIZE + 8];
-                snprintf(label, sizeof(label), "%s###role%u", battle->defs->roles[r], r);
-                if (r)
-                    same_line_if_fits(label);
-                b32 lit = (game->role_filter >> r) & 1u;
-                if (lit)
-                    igPushStyleColor_Vec4(ImGuiCol_Button, igGetStyle()->Colors[ImGuiCol_ButtonActive]);
-                if (igButton(label, (ImVec2_c){0, 0}))
-                    game->role_filter ^= 1u << r;
-                if (lit)
-                    igPopStyleColor(1);
-            }
+        if (lab) {
+            lab_view_panel(game);
+            igEnd();
+            return;
         }
-        // The unit types: one button each, the chosen one lit. A squad of several says how many ("Crawler x6 (100)"). A unit type that
-        // lacks a lit role is left out; the chosen one stays chosen.
-        igBeginDisabled(battle->phase != BATTLE_DEPLOY);
-        u32 shown = 0;
-        for (u32 i = 0; i < battle->defs->unit_count; ++i) {
-            if ((battle->defs->unit_roles[i] & game->role_filter) != game->role_filter)
-                continue;
-            const UnitDef* def = &battle->defs->units[i];
-            char label[BATTLE_NAME_SIZE + 32];
-            if (def->squad_size > 1)
-                snprintf(label, sizeof(label), "%s x%u (%u)###unit%u", def->name, def->squad_size, def->cost, i);
-            else
-                snprintf(label, sizeof(label), "%s (%u)###unit%u", def->name, def->cost, i);
-            if (shown++)
-                same_line_if_fits(label);
-            b32 chosen = game->selected_def == i;
-            if (chosen)
-                igPushStyleColor_Vec4(ImGuiCol_Button, igGetStyle()->Colors[ImGuiCol_ButtonActive]);
-            if (igButton(label, (ImVec2_c){0, 0}))
-                game->selected_def = i;
-            if (chosen)
-                igPopStyleColor(1);
-        }
-        game->unit_buttons_shown = shown;
-        igEndDisabled();
-        if (battle->defs->role_count) {
-            char names[BATTLE_MAX_ROLES * (BATTLE_NAME_SIZE + 2)];
-            format_roles(battle->defs, battle->defs->unit_roles[game->selected_def], names, sizeof(names));
-            igText(T("Roles: %s"), names[0] ? names : T("none"));
-        }
-        // The chosen unit's layer, and the layers its weapon can hit.
-        {
-            const UnitDef* def = &battle->defs->units[game->selected_def];
-            char targets[32] = "";
-            if (def->weapon.targets & TARGET_GROUND)
-                snprintf(targets, sizeof(targets), "%s", T("Ground"));
-            if (def->weapon.targets & TARGET_AIR) {
-                umm used = strlen(targets);
-                snprintf(targets + used, sizeof(targets) - used, "%s%s", used ? ", " : "", T("Air"));
-            }
-            igText(T("Layer: %s, targets: %s"), def->layer == UNIT_LAYER_AIR ? T("Air") : T("Ground"), targets);
-        }
+        view_unit_buttons(game, &game->selected_def, battle->phase == BATTLE_DEPLOY, true);
 
         b32 can_start = battle->phase == BATTLE_DEPLOY && battle_alive_count(battle, TEAM_PLAYER) > 0;
         igBeginDisabled(!can_start);
@@ -747,43 +885,7 @@ void view_panel(Game* game)
             battle_clear_placement(battle);
         }
 
-        // The game clock's speed: the rules run the same ticks at any speed, only more or fewer a frame.
-        b32 paused = game->paused;
-        if (paused)
-            igPushStyleColor_Vec4(ImGuiCol_Button, igGetStyle()->Colors[ImGuiCol_ButtonActive]);
-        if (igButton(TL("Pause"), (ImVec2_c){0, 0}))
-            game->paused = !game->paused;
-        if (paused)
-            igPopStyleColor(1);
-        const f32 speeds[4] = {0.5f, 1.0f, 2.0f, 4.0f};
-        const char* speed_labels[4] = {"0.5x###speed0", "1x###speed1", "2x###speed2", "4x###speed3"};
-        for (u32 i = 0; i < NV_ARRAY_COUNT(speeds); ++i) {
-            igSameLine(0.0f, -1.0f);
-            b32 lit = !game->paused && game->speed == speeds[i];
-            if (lit)
-                igPushStyleColor_Vec4(ImGuiCol_Button, igGetStyle()->Colors[ImGuiCol_ButtonActive]);
-            if (igButton(speed_labels[i], (ImVec2_c){0, 0})) {
-                game->speed = speeds[i];
-                game->paused = false;
-            }
-            if (lit)
-                igPopStyleColor(1);
-        }
-
-        // One tick back or forward, paused; holding a button runs through the ticks.
-        igBeginDisabled(battle->phase == BATTLE_DEPLOY || battle->tick == 0);
-        if (step_button(TL("< Tick"))) {
-            game->step = -1;
-            game->paused = true;
-        }
-        igEndDisabled();
-        igSameLine(0.0f, -1.0f);
-        igBeginDisabled(battle->phase != BATTLE_FIGHT);
-        if (step_button(TL("Tick >"))) {
-            game->step = 1;
-            game->paused = true;
-        }
-        igEndDisabled();
+        view_time_controls(game, battle->phase != BATTLE_DEPLOY && battle->tick > 0, battle->phase == BATTLE_FIGHT);
 
         igSeparator();
         igText(T("Supply: %u / %u"), battle_supply_left(battle), battle->defs->supply);

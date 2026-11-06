@@ -122,6 +122,21 @@ u32 defs_rule_get(const char* text, umm size, const char* key, f64 values[BATTLE
 // in `capacity` bytes. The values are not checked against the rules' ranges: read the result with defs_read_project.
 umm defs_rule_set(const char* text, umm size, const char* key, const f64* values, u32 count, char* out, umm capacity);
 
+// Editing a unit def in a project's text (docs/specs/unit_lab.md, "Editing the unit's values"): the text must have been read
+// without errors. `block` is where the key is: the unit's own block, its weapon's or its ability's (a shield's). A key's values
+// are as the file writes them (degrees, seconds); `muzzle` has three, every other key one.
+typedef enum DefsBlock { DEFS_BLOCK_UNIT, DEFS_BLOCK_WEAPON, DEFS_BLOCK_ABILITY } DefsBlock;
+#define DEFS_UNIT_MAX_VALUES 3
+// Reads key `key`'s values in unit `unit`'s `block`; returns how many, 0 when the file does not give the key (an optional key
+// left out) or it is not a key of that block.
+u32 defs_unit_get(const char* text, umm size, const char* unit, u32 block, const char* key, f64 values[DEFS_UNIT_MAX_VALUES]);
+// Writes the text with the key's values changed to `values` into `out` (which may not overlap `text`), as defs_rule_set does.
+// A key the block does not give yet gets a line of its own after the block's last key, at its keys' indentation. Returns the
+// new text's size, 0 when the unit, the block (a unit with no ability) or the key is not there, `count` is not its number of
+// values or the text does not fit in `capacity` bytes. The values are not checked: read the result with defs_read_project.
+umm defs_unit_set(const char* text, umm size, const char* unit, u32 block, const char* key, const f64* values, u32 count,
+                  char* out, umm capacity);
+
 // Seconds as whole ticks, rounded up (with room for float error, so 1.5 s is 45 ticks and not 46); at least 1.
 u32 battle_seconds_to_ticks(f32 seconds);
 
@@ -139,7 +154,10 @@ typedef enum BattleTeam { TEAM_PLAYER, TEAM_ENEMY } BattleTeam;
 
 typedef struct UnitId { u32 index; } UnitId; // a slot in Battle.units; 0 = none
 
-enum { UNIT_DEAD = 1 << 0 };
+// UNIT_DUMMY: a target of the unit lab (docs/specs/unit_lab.md). It picks no target and never fires, and it moves by the
+// velocity set on it before the tick (so leading aim reads it). UNIT_HOLD: a unit that does not move; it still turns to its
+// target and fires at it within range.
+enum { UNIT_DEAD = 1 << 0, UNIT_DUMMY = 1 << 1, UNIT_HOLD = 1 << 2 };
 
 typedef struct Unit {
     u32 flags;
@@ -185,6 +203,7 @@ typedef enum BattleOutcome { OUTCOME_NONE, OUTCOME_PLAYER, OUTCOME_ENEMY, OUTCOM
 typedef struct Battle {
     const BattleDefs* defs;
     BattlePhase phase;
+    b32 endless; // the round never ends: no side wins and there is no time limit (the unit lab)
     BattleOutcome outcome;
     u32 tick;
     NvRandom rng; // seeded at Start from the stage's seed
@@ -225,6 +244,10 @@ typedef struct BattleCell {
     s32 x, row;
 } BattleCell;
 BattleCell battle_squad_at(const Battle* battle, s32 cell_x, s32 cell_row);
+
+// Puts one unit of a unit def at `position` (its height included), outside any squad: the unit lab's units. The player's faces
+// +Z, the enemy's -Z. Only in deployment; the next placement or Retry rebuilds the units without it.
+UnitId battle_add_unit(Battle* battle, u32 def, u32 team, NvVec3 position, u32 flags);
 
 // Start needs at least one player unit. Retry goes back to deployment with the same placement, from any phase.
 b32 battle_start(Battle* battle);

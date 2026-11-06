@@ -56,6 +56,25 @@ NvVec3 battle_cell_center(const BattleRules* rules, u32 cell_x, u32 cell_row)
     return nv_vec3(((f32)cell_x + 0.5f) * rules->cell_size, 0.0f, ((f32)cell_row + 0.5f) * rules->cell_size);
 }
 
+// Puts a unit of a unit def in the next slot at `position` (its height included), as the def makes it: full health, a full
+// shield, facing the other side (the player's +Z, the enemy's -Z). Returns its slot.
+internal u32 add_unit_at(Battle* battle, u32 def_index, u32 team, NvVec3 position, u32 flags)
+{
+    NV_ASSERT(battle->unit_count + 1 < BATTLE_MAX_UNITS);
+    const UnitDef* def = &battle->defs->units[def_index];
+    Unit* unit = &battle->units[++battle->unit_count];
+    *unit = (Unit){0};
+    unit->flags = flags;
+    unit->team = (u8)team;
+    unit->def = (u8)def_index;
+    unit->position = unit->previous_position = position;
+    unit->yaw = unit->previous_yaw = team == TEAM_PLAYER ? 0.0f : NV_PI; // the sides face each other
+    unit->health = def->health;
+    if (def->ability.kind == ABILITY_SHIELD)
+        unit->ability.shield.energy = def->ability.shield.capacity;
+    return battle->unit_count;
+}
+
 // A squad's units stand on its footprint in a grid as near square as it gets (columns = ceil(sqrt(size))), each in the middle of
 // its share; a last row that is not full is centered. Rows run along +Z and the units are made row by row. A squad of one on
 // one cell stands on the cell's center.
@@ -76,16 +95,7 @@ internal void make_squad(Battle* battle, u32 def_index, u32 team, u32 cell_x, u3
         // In cells from the corner cell's center; exactly 0 for a squad of one on one cell.
         f32 x = ((f32)column + 0.5f + (f32)(columns - in_row) * 0.5f) * footprint / (f32)columns - 0.5f;
         f32 z = ((f32)row + 0.5f) * footprint / (f32)rows - 0.5f;
-        Unit* unit = &battle->units[++battle->unit_count];
-        *unit = (Unit){0};
-        unit->team = (u8)team;
-        unit->def = (u8)def_index;
-        unit->position = nv_vec3_add(corner, nv_vec3(x * rules->cell_size, altitude, z * rules->cell_size));
-        unit->previous_position = unit->position;
-        unit->yaw = unit->previous_yaw = team == TEAM_PLAYER ? 0.0f : NV_PI; // the sides face each other
-        unit->health = def->health;
-        if (def->ability.kind == ABILITY_SHIELD)
-            unit->ability.shield.energy = def->ability.shield.capacity;
+        add_unit_at(battle, def_index, team, nv_vec3_add(corner, nv_vec3(x * rules->cell_size, altitude, z * rules->cell_size)), 0);
     }
 }
 
@@ -109,6 +119,15 @@ internal void rebuild_units(Battle* battle)
         const StagePlace* place = &battle->defs->enemy[i];
         make_squad(battle, place->def, TEAM_ENEMY, place->cell_x, place->cell_row);
     }
+}
+
+UnitId battle_add_unit(Battle* battle, u32 def_index, u32 team, NvVec3 position, u32 flags)
+{
+    NV_ASSERT(battle->phase == BATTLE_DEPLOY && def_index < battle->defs->unit_count);
+    u32 slot = add_unit_at(battle, def_index, team, position, flags);
+    if (team == TEAM_PLAYER)
+        battle->player_units = slot; // NOTE: the player's units come first, so add them before the enemy's
+    return (UnitId){slot};
 }
 
 void battle_init(Battle* battle, const BattleDefs* defs)
@@ -266,7 +285,7 @@ internal void pick_targets(Battle* battle)
 {
     for (u32 i = 1; i <= battle->unit_count; ++i) {
         Unit* unit = &battle->units[i];
-        if (!is_alive(unit))
+        if (!is_alive(unit) || (unit->flags & UNIT_DUMMY))
             continue;
         b32 has_target = unit->target.index && is_alive(&battle->units[unit->target.index]);
         if (!has_target || battle->tick % battle->defs->rules.retarget_ticks == 0)
@@ -285,6 +304,11 @@ internal void move_units(Battle* battle)
 
     for (u32 i = 1; i <= battle->unit_count; ++i) {
         Unit* unit = &battle->units[i];
+        if (unit->flags & UNIT_DUMMY) { // moves by the velocity it was given
+            if (is_alive(unit))
+                unit->position = nv_vec3_add(unit->position, nv_vec3_scale(unit->velocity, BATTLE_TICK_SECONDS));
+            continue;
+        }
         unit->velocity = nv_vec3(0.0f, 0.0f, 0.0f);
         if (!is_alive(unit) || !unit->target.index)
             continue;
@@ -293,7 +317,7 @@ internal void move_units(Battle* battle)
         to_target.y = 0.0f;
         f32 distance = sqrtf(nv_vec3_dot(to_target, to_target));
         f32 stop_distance = def->weapon.range * rules->stop_fraction;
-        if (distance > stop_distance) {
+        if (distance > stop_distance && !(unit->flags & UNIT_HOLD)) {
             f32 step = fminf(def->speed * BATTLE_TICK_SECONDS, distance - stop_distance); // no overshooting the stop
             unit->velocity = nv_vec3_scale(to_target, step / distance / BATTLE_TICK_SECONDS);
             unit->position = nv_vec3_add(unit->position, nv_vec3_scale(unit->velocity, BATTLE_TICK_SECONDS));
@@ -603,6 +627,8 @@ internal void refill_shields(Battle* battle)
 // remaining value wins.
 internal void check_end(Battle* battle)
 {
+    if (battle->endless)
+        return;
     u32 player = battle_alive_count(battle, TEAM_PLAYER), enemy = battle_alive_count(battle, TEAM_ENEMY);
     if (!player || !enemy) {
         battle->outcome = !player && !enemy ? OUTCOME_DRAW : !player ? OUTCOME_ENEMY : OUTCOME_PLAYER;
