@@ -1,6 +1,7 @@
 # 메인 메뉴 스펙 (Main Menu)
 
 상태: 초안 (2026-11-06). 같은 날 GAME과 EDITOR로 나누는 것을 더했다("GAME과 EDITOR" 절; `build_dashboard.md`의 "게임과 에디터").
+같은 날 메뉴의 버튼을 Start Game과 Quit 둘로 줄였다(설정 페이지와 Unit Lab 버튼을 뺐다; 둘 다 게임 화면의 패널에 있다).
 
 ### 목표
 
@@ -9,8 +10,8 @@
 
 - 메뉴 뒤에서 **배경 전투**가 돈다: 이 게임의 규칙(`src/battle.c`)으로 실제 한 판이 돌고, 카메라가 천천히 전장을 돈다. 새 그림이나
   모델 없이도 "이런 게임이다"를 보여 준다.
-- 메뉴에는 지금 게임이 **가진 것만** 둔다: 전투 한 판(`battle.md`), 유닛 실험실(`unit_lab.md`), 설정(언어, UI 크기). 아직 없는 것
-  (캠페인, 이어하기, 오디오 설정)의 버튼은 만들지 않는다(꺼진 자리 표시도 없다; "나중에" 절).
+- 메뉴의 버튼은 **Start Game**과 **Quit** 둘뿐이다. 유닛 실험실(`unit_lab.md`)과 설정(언어, UI 크기)은 지금처럼 게임 화면의 Battle 패널에서
+  연다(모드 버튼, 콤보). 아직 없는 것(캠페인, 이어하기, 오디오 설정)의 버튼은 만들지 않는다(꺼진 자리 표시도 없다; "나중에" 절).
 - 게임에서 메뉴로 언제든 돌아올 수 있다.
 
 메뉴는 `autobattler.md`의 항목 10(게임 UI)의 첫 화면이다. 상점, 카드, 라운드 결과 같은 게임 안의 화면은 이 스펙 밖이다.
@@ -19,19 +20,18 @@
 
 | 이 스펙 | 나중에 (이 스펙 밖) |
 |---|---|
-| 시작 화면인 메인 메뉴, 설정 페이지 | 캠페인, 스테이지 고르기, 이어하기, 진행 저장 |
+| 시작 화면인 메인 메뉴(Start Game, Quit) | 캠페인, 스테이지 고르기, 이어하기, 진행 저장 |
 | 배경 전투(스테이지의 적 배치를 거울로 비춘 아군과의 한 판, 끝나면 다시) | 메뉴 음악과 효과음(엔진에 오디오가 없다) |
-| 게임으로 들어가기(전투, 실험실)와 돌아오기(패널 버튼, Esc) | 게임 로고 그림, 메뉴 전용 3D 장면 |
-| 화면 전환의 짧은 페이드 | 설정 저장 |
+| 게임으로 들어가기와 돌아오기(패널 버튼, Esc) | 게임 로고 그림, 메뉴 전용 3D 장면 |
+| 화면 전환의 짧은 페이드 | 메뉴의 다른 버튼(실험실, 설정), 설정 저장 |
 | 데스크톱과 폰 배치, 키보드로 고르기 | 게임패드 |
-| Windows의 Quit(엔진에 창 닫기 함수 하나) | |
+| Quit: 프로그램을 끝낸다(엔진에 함수 하나, `nv_quit`) | |
 | GAME과 EDITOR: 같은 빌드의 두 시작(`?editor`, `--editor`) | GAME에서 개발 도구 빼기 |
 
 ### 용어
 
 - **화면(screen):** 게임이 지금 보이는 큰 단위. `메뉴`와 `게임` 둘이다(`GameScreen`). 게임 화면은 지금의 전장, Battle 패널, 재생 막대이고,
   그 안의 모드(`GameMode`: 전투, 실험실)는 그대로다.
-- **메뉴 페이지:** 메뉴 안의 `처음`(버튼 목록)과 `설정`(`MenuPage`).
 - **배경 전투:** 메뉴 뒤에서 도는 전투. 게임의 전투(`Game.battle`)와 따로인 `Battle` 하나다(`Game.menu_battle`). 플레이어의 배치에
   닿지 않는다.
 
@@ -45,10 +45,11 @@
 |---|---|---|
 | 웹 | `index.html` 그대로 | 페이지 주소에 `editor` 옵션: `index.html?editor` |
 | Windows | `autobattler.exe` | `autobattler.exe --editor` |
-| 시작 화면 | 메뉴(처음) | 게임 화면, 전투 모드, 배치 단계: 이 스펙 전의 오토배틀러 그대로 |
+| 시작 화면 | 메뉴 | 게임 화면, 전투 모드, 배치 단계: 이 스펙 전의 오토배틀러 그대로 |
 | 메뉴 | 있다 | 없다: 패널에 Main menu 버튼이 없고, Esc는 메뉴로 가지 않으며, 배경 전투를 만들지 않는다 |
 
-- 시작할 때 한 번 읽어 `Game.editor`에 둔다. 앱이 도는 동안 바뀌지 않는다(바꾸려면 주소를 바꿔 다시 연다).
+- `main(int argc, char** argv)`가 시작할 때 `argv`에서 `--editor`를 찾아 `Game.editor`에 둔다(표준 C라 두 플랫폼이 같다; 웹의 `argv`는
+  엔진의 페이지가 주소의 옵션으로 채운다, "엔진 변경" 절). 앱이 도는 동안 바뀌지 않는다(바꾸려면 주소를 바꿔 다시 연다).
 - `editor`는 값이 없는 옵션이다: `?editor`, `?editor=1`, `?x=1&editor` 모두 EDITOR. Windows는 인수 `--editor`가 있으면 EDITOR.
 - 개발 서버와 `just serve`에서는 `http://localhost:8000/?editor`가 에디터다.
 - 지금은 두 시작의 차이가 메뉴뿐이다. 개발 도구(패널의 프로젝트 줄, Rules 절, Unit 절)는 GAME에도 그대로 있다. GAME에서 그것을 빼는 것은
@@ -57,44 +58,27 @@
 ### 화면 흐름 (GAME)
 
 ```
-페이지 열림 ──→ 메뉴(처음) ── Battle ────→ 게임(전투 모드, 배치 단계)
-                  │  ├─ Unit Lab ──→ 게임(실험실 모드)
-                  │  ├─ Settings ──→ 메뉴(설정) ── Back, Esc ──→ 메뉴(처음)
-                  │  └─ Quit ──────→ 앱 끝 (Windows만)
-                  │
-게임 ── 패널의 Main menu, Esc ──→ 메뉴(처음)
+페이지 열림 ──→ 메뉴 ─┬─ Start Game ──→ 게임(전투 모드, 배치 단계) ── 패널의 모드 버튼 ──→ 실험실
+                      │                    │
+                      │                    └─ 패널의 Main menu, Esc ──→ 메뉴
+                      └─ Quit ──→ 프로그램 끝
 ```
 
-- GAME은 언제나 메뉴(처음)로 시작한다(EDITOR는 위 표대로 게임 화면으로). 프로젝트 파일(`data/default.abproj`)은 지금처럼 시작할 때 읽는다(메뉴가 뜨기 전).
+- GAME은 언제나 메뉴로 시작한다(EDITOR는 위 표대로 게임 화면으로). 프로젝트 파일(`data/default.abproj`)은 지금처럼 시작할 때 읽는다(메뉴가 뜨기 전).
 - 메뉴에 있는 동안 게임 화면은 그리지도 돌리지도 않는다(게임의 전투는 틱이 가지 않는다).
 
-### 메뉴 (처음)
+### 메뉴
 
-위에서 아래로: 게임 제목, 버튼 목록. 버튼은 세로로 한 줄씩이고, 처음에 첫 버튼(Battle)이 키보드 포커스를 가진다.
+위에서 아래로: 게임 제목, 버튼 둘. 버튼은 세로로 한 줄씩이고, 처음에 Start Game이 키보드 포커스를 가진다.
 
-| 버튼 | 하는 일 | 꺼지는 때 |
-|---|---|---|
-| **Battle** | 게임 화면, 전투 모드로 간다. 배치 단계이고 플레이어 배치는 메뉴로 나가기 전 그대로다(처음에는 빈 배치) | 없다. 정의를 읽지 못했어도 들어간다: 패널이 지금처럼 첫 오류와 프로젝트 줄을 보여 다른 파일을 열 수 있다 |
-| **Unit Lab** | 게임 화면, 실험실 모드로 간다(`game_set_mode(GAME_MODE_LAB)`). 실험은 처음부터 시작하고, 실험 조건(`Game.lab_settings`)은 앱이 도는 동안 기억한다 | 정의를 읽지 못했을 때(버튼 아래에 이유 한 줄: "The project has an error: open Battle to fix it.") |
-| **Settings** | 메뉴(설정)로 간다 | 없다 |
-| **Quit** | 앱을 끝낸다(창 닫기와 같다) | Windows에만 보인다. 웹에는 없다(브라우저 탭을 닫는다) |
-
+| 버튼 | 하는 일 |
+|---|---|
+| **Start Game** | 게임 화면, 전투 모드로 간다. 배치 단계이고 플레이어 배치는 메뉴로 나가기 전 그대로다(처음에는 빈 배치). 꺼지지 않는다: 정의를 읽지 못했어도 들어가고, 패널이 지금처럼 첫 오류와 프로젝트 줄을 보여 다른 파일을 열 수 있다 |
+| **Quit** | 프로그램을 끝낸다(`nv_quit`). 창이나 탭을 닫는 것이 아니다. Windows는 프로세스가 끝나 창이 사라진다. 웹은 프레임 루프와 프로그램이 멈추고, 페이지가 캔버스 대신 "끝났다, 다시 읽으면 다시 시작한다"는 줄을 보인다. 탭은 그대로 남는다(브라우저 탭을 닫는 것은 브라우저의 일이다) |
+- Esc는 메뉴에서 아무것도 하지 않는다.
 - 게임 제목: 임시로 `AUTOBATTLER`(열린 질문 1). 큰 글자(UI 글꼴 크기의 3배)로, 낱말 하나라 한국어 표에 행이 없다(`T()`를 거치지 않는다).
 - 제목 아래에 작은 회색 한 줄: "A prototype. Units and rules change often." (프로토타입임을 알린다; 한국어 행이 있다).
 - 구석의 빌드 라벨(`nv_imgui_draw_build_label`)은 메뉴에서도 그대로 그린다.
-
-### 메뉴 (설정)
-
-제목 대신 "Settings", 그 아래에 줄마다 이름과 위젯, 맨 아래에 **Back**.
-
-| 설정 | 위젯 | 값 |
-|---|---|---|
-| Language | 콤보 | English, 한국어. Battle 패널의 언어 콤보와 같은 값이다(어느 쪽에서 바꿔도 같다) |
-| UI scale | 콤보 | 100%–250%. 패널의 UI scale 콤보와 같은 값(`Game.ui_zoom`; `battle.md`의 "실행 파일") |
-
-- 저장하지 않는다. 지금의 패널 설정과 같다("나중에" 절).
-- 패널의 두 콤보는 그대로 둔다(개발 중에는 게임 화면에서 바꾸는 것이 편하다).
-- Back과 Esc가 메뉴(처음)로 돌아가고, 포커스는 Settings 버튼에 둔다.
 
 ### 게임에서 메뉴로
 
@@ -103,6 +87,7 @@
 - **Battle 패널:** 맨 위 단계 줄의 오른쪽 끝에 `Main menu` 버튼(아이콘 `NV_ICON_HOUSE`와 낱말). 전투 모드와 실험실 모드 모두에 있다.
 - **Esc (데스크톱):** 게임 화면에서 Esc를 누르면 Main menu와 같다. ImGui의 글 입력(Rules 절의 값 등)이 키를 가진 동안에는 그 입력이 Esc를
   먹고(입력 취소), 메뉴로 가지 않는다(`igGetIO()->WantTextInput`).
+- 메뉴로 돌아오면 포커스는 Start Game에 있다.
 - **메뉴로 가면:**
   - 전투가 배치 단계가 아니면(전투 중, 결과) `battle_retry`로 배치 단계에 돌린다. 플레이어 배치는 남는다. 도는 라운드는 버린다(묻지
     않는다: 배치가 남으므로 잃는 것은 지켜본 시간뿐이다).
@@ -149,30 +134,44 @@ ImGui 창 하나다(`NoDecoration | NoBackground | NoMove | NoSavedSettings`). �
   팀 색(아군 파랑) 세로 막대(폭 4)가 선다. 꺼진 버튼은 글자를 흐리게. 버튼 사이 간격 8.
 - **색:** 지금의 ImGui 스타일 위에 메뉴 창에서만 색을 바꾼다(`igPushStyleColor`). 아군 파랑은 유닛 메시의 팀 색과 같은 값을 쓴다.
 - **페이드:** 화면이 바뀔 때(메뉴 ↔ 게임) 0.25초 동안 검정으로 덮었다가 걷는다(앞 0.125초 어두워지고, 그때 화면을 바꾸고, 뒤 0.125초 밝아진다;
-  ImGui의 맨 앞 그리기 목록의 전체 화면 사각형). 페이드 동안 입력은 받지 않는다. 메뉴 페이지 사이(처음 ↔ 설정)는 페이드가 없다.
-- **키보드:** 위아래 화살표와 Tab이 버튼 사이를 옮기고 Enter와 Space가 누른다(ImGui의 키보드 내비게이션). 마우스나 터치로 누르면 포커스
+  ImGui의 맨 앞 그리기 목록의 전체 화면 사각형). 페이드 동안 입력은 받지 않는다.
+- **키보드:** 위아래 화살표와 Tab이 두 버튼 사이를 옮기고 Enter와 Space가 누른다(ImGui의 키보드 내비게이션). 마우스나 터치로 누르면 포커스
   표시는 숨는다(ImGui가 그렇게 한다).
 
 ### 엔진 변경
 
-- **`nv_window_quit(NvWindow*)`(`engine/window.h`):** Windows는 창을 닫는다(사용자가 닫기를 누른 것과 같이 프레임 루프가 끝난다). 웹은 아무것도
-  하지 않는다(게임은 웹에서 Quit 버튼을 그리지 않는다). 헤드리스 창은 루프를 끝낸다. 엔진의 PR이 먼저이고, 게임은 그 커밋으로 서브모듈을 옮긴다.
-- **키보드 내비게이션:** 엔진의 ImGui는 지금 `ImGuiConfigFlags_NavEnableKeyboard`를 켜지 않는다(2026-11-06 확인). 앱이 켜고 끌 수 있게
-  `NvImgui`에 스위치 하나를 더하고(기본 끔: 에디터의 화살표 키 단축키와 부딪치지 않게), 게임은 메뉴에 있는 동안만 켠다.
+- **`void nv_quit(void)`(`engine/window.h`, `nv_window_run` 옆):** 프로그램을 끝낸다. 부른 프레임을 끝까지 돈 뒤(GPU 프레임이 반쯤 열린
+  채 끝나지 않게) `nv_window_run`의 루프가 멈춘다. 그 전에 `nv_window_on_hidden`의 콜백을 부른다(창을 닫을 때처럼 저장할 마지막 때).
+  - Windows: 프로세스가 끝난다(종료 코드 0). 창을 닫았을 때 루프가 하는 `ExitProcess`와 같다.
+  - 웹: 메인 루프를 멈추고(`emscripten_cancel_main_loop`) 런타임을 끝낸다(`emscripten_force_exit(0)`). 엔진의 페이지(`web/index.html.in`)가
+    캔버스를 감추고 로딩 글자 자리에 한 줄을 보인다: "The program has ended. Reload the page to start it again."
+  - 헤드리스 창: 루프를 끝낸다.
+  - 왜 게임의 `exit(0)`이 아닌가: Windows만이면 `exit(0)`으로 충분하다(엔진도 끝날 때 아무것도 정리하지 않는다). 하지만 웹에서는 메인 루프가
+    런타임을 살려 두므로 `exit(0)`은 부른 프레임에서 빠져나오기만 하고 다음 프레임이 그대로 돈다(Emscripten의 `libcore.js`: "halting
+    execution but not exiting the runtime or preventing further async execution"). 루프를 멈추는 것은 엔진만 할 수 있다.
+  - 엔진의 PR이 먼저이고, 게임은 그 커밋으로 서브모듈을 옮긴다.
 
-- **`nv_window_has_option(const char* name)`(`engine/window.h`):** 앱이 시작 옵션을 묻는다. 웹은 페이지 주소의 쿼리에 그 이름이 있는가
-  (`new URLSearchParams(location.search).has(name)`), Windows는 명령줄에 `--<name>`이 있는가(값을 받는 지금의
-  `nv_window_win32_command_line_value`와 달리 값이 없는 스위치), 헤드리스 창은 0. 다른 앱도 쓸 만하므로 엔진에 둔다.
+- **페이지 주소의 옵션을 `argv`로 (`web/index.html.in`):** 엔진의 페이지가 `Module.arguments`를 주소의 쿼리로 채운다. 쿼리의 이름마다
+  `--<이름>`, 값이 비어 있지 않으면 그 뒤에 값: `?editor`는 `--editor`, `?x=1`은 `--x 1`. 그러면 앱의 `main(int argc, char** argv)`가 웹에서도
+  Windows의 명령줄과 같은 모양의 인수를 받는다. Windows는 바꿀 것이 없다: 실행 파일이 콘솔 서브시스템이라(`WinMain`이 없다) 표준 `argv`가
+  이미 명령줄이다. 새 C API는 없다. 지금 `argv`를 읽는 앱이 없으므로(게임과 샌드박스 모두 `main(void)`) 다른 앱에 해가 없다.
+
+엔진 변경이 필요한 까닭: 웹의 프레임 루프를 멈추는 것과 페이지 주소를 읽는 것은 플랫폼의 일인데, 게임의 파일은 플랫폼을 모른다(Win32와
+JavaScript를 부르지 않고 `_WIN32`, `__EMSCRIPTEN__`을 보지 않는다; `engine/AGENTS.md`). 둘 다 웹 쪽에서 몇 줄씩이다.
 
 그 밖은 게임 코드다(다른 앱이 이 메뉴를 쓰지 않는다).
+
+- **키보드 내비게이션은 엔진 변경이 아니다:** 엔진은 ImGui의 `ConfigFlags`를 건드리지 않고, 내비게이션이 쓰는 키(화살표, Tab, Enter, Space)는
+  웹과 Windows 모두 이미 ImGui로 보낸다(`imgui_web.c`, `imgui_win32.c`). 그래서 게임이 메뉴에 있는 동안만
+  `ImGuiConfigFlags_NavEnableKeyboard`를 켜고 게임 화면에서 끈다(게임 화면의 패널에서는 화살표가 위젯 사이를 옮기지 않게).
 
 ### 코드 위치
 
 | 파일 | 내용 |
 |---|---|
-| `src/game.h` | `Game.editor`, `GameScreen`(`GAME_SCREEN_MENU`, `GAME_SCREEN_PLAY`), `MenuPage`, `Game.screen`, `menu_page`, `menu_battle`, 배경 전투의 끝난 뒤 기다림과 카메라 각도, 페이드 상태(`fade_time`, `fade_to`) |
-| `src/main.c` | 시작할 때 `nv_window_has_option("editor")`로 `Game.editor`를 정하고 첫 화면을 고른다, `game_set_screen`(페이드를 시작하고, 중간에 화면을 바꾸고 "게임에서 메뉴로"의 일을 한다), 프레임 루프가 화면에 따라 메뉴나 게임을 돌린다, 배치(메뉴는 뷰포트가 전체 화면이고 패널과 막대가 없다), 디버그 내보내기와 Windows 행 |
-| `src/menu_view.c` (새 파일) | 배경 전투 만들기와 돌리기(`menu_view_start`, `menu_view_tick`), 그 카메라, 메뉴 창(처음, 설정), 가림막, 페이드 |
+| `src/game.h` | `Game.editor`, `GameScreen`(`GAME_SCREEN_MENU`, `GAME_SCREEN_PLAY`), `Game.screen`, `menu_battle`, 배경 전투의 끝난 뒤 기다림과 카메라 각도, 페이드 상태(`fade_time`, `fade_to`) |
+| `src/main.c` | `main(int argc, char** argv)`가 `--editor`로 `Game.editor`를 정하고 첫 화면을 고른다, `game_set_screen`(페이드를 시작하고, 중간에 화면을 바꾸고 "게임에서 메뉴로"의 일을 한다), 프레임 루프가 화면에 따라 메뉴나 게임을 돌린다, 배치(메뉴는 뷰포트가 전체 화면이고 패널과 막대가 없다), 디버그 내보내기와 Windows 행 |
+| `src/menu_view.c` (새 파일) | 배경 전투 만들기와 돌리기(`menu_view_start`, `menu_view_tick`), 그 카메라, 메뉴 창, 가림막, 페이드 |
 | `src/battle_view.c` | 패널의 Main menu 버튼, Esc(둘 다 GAME에서만). 유닛과 포탄 그리기를 배경 전투에도 쓴다(`game_shown_battle`이 메뉴에서는 `menu_battle`을 준다) |
 | `src/strings.c` | 메뉴의 한국어 행 |
 | `CMakeLists.txt` | `menu_view.c` |
@@ -181,10 +180,10 @@ ImGui 창 하나다(`NoDecoration | NoBackground | NoMove | NoSavedSettings`). �
 
 ### 디버그 내보내기 (Debug 빌드)
 
-- `_battle_debug_menu(n)`: 0 화면(0 메뉴, 1 게임), 1 메뉴 페이지(0 처음, 1 설정), 2 배경 전투의 틱, 3 배경 전투의 유닛 수, 4 배경 전투를
-  몇 번 다시 시작했나, 5 페이드 중인가, 6 지난 프레임에 그린 메뉴 버튼 수, 7 EDITOR인가.
-- `_battle_debug_menu_action(action)`: 0 Battle, 1 Unit Lab, 2 Settings, 3 Back, 4 Main menu(게임에서), 5 Quit. 버튼과 같이 하고, 버튼이
-  꺼져 있거나 보이지 않으면(EDITOR에서는 모두) 0. 페이드는 건너뛰어 다음 프레임에 바뀐 화면이 보인다(테스트가 기다리지 않게).
+- `_battle_debug_menu(n)`: 0 화면(0 메뉴, 1 게임), 1 배경 전투의 틱, 2 배경 전투의 유닛 수, 3 배경 전투를 몇 번 다시 시작했나, 4 페이드
+  중인가, 5 지난 프레임에 그린 메뉴 버튼 수, 6 EDITOR인가.
+- `_battle_debug_menu_action(action)`: 0 Start Game, 1 Quit, 2 Main menu(게임에서). 버튼과 같이 하고, 그 버튼이 지금 보이지 않으면
+  (EDITOR에서는 모두) 0. 페이드는 건너뛰어 다음 프레임에 바뀐 화면이 보인다(테스트가 기다리지 않게).
 - `_battle_debug_layout(region, component)`에 region 3(메뉴의 버튼 목록 전체의 사각형)을 더한다.
 - 다른 내보내기(`_battle_debug_deploy`, `_battle_debug_start` 등)는 화면과 상관없이 게임의 전투에 한다.
 - Windows에서는 둘 다 `src/main.c`의 `battle_debug_calls`에 한 행씩(`menu`, `menu_action`).
@@ -199,11 +198,12 @@ ImGui 창 하나다(`NoDecoration | NoBackground | NoMove | NoSavedSettings`). �
 - **결정론:** 배경 전투를 두 번 돌리면 같은 해시다.
 
 Playwright(Release, Debug, 데스크톱과 폰 크기; 손으로 돌리는 검사): `?editor`로 열면 메뉴 없이 배치 단계이고 패널에 Main menu가 없으며
-Esc가 아무것도 하지 않는다; 옵션 없이 열면 메뉴로 열리고 배경 전투의 틱이 간다; Battle을 누르면 배치
-단계의 게임 화면, 유닛을 놓고 Main menu를 누른 뒤 다시 Battle을 누르면 배치가 그대로다; 라운드 중에 Esc를 누르면 메뉴로 가고 다시 들어오면 배치
-단계다; Unit Lab으로 실험실이 열린다; Settings에서 언어를 한국어로 바꾸면 메뉴와 패널이 모두 한국어다; 키보드만으로(화살표, Enter) Battle에
-들어간다; 폰 크기에서 버튼이 아래에 있고 터치로 눌린다(약 2초 기다림); 웹에 Quit이 없다; 콘솔에 WebGPU 오류가 없다. Windows Debug 빌드는
-`--script`로 메뉴에서 Battle, Main menu, Quit을 돌리고(`--editor`로는 메뉴 없이 시작하는 것도 본다) `[d3d12]` 메시지가 없고 Quit으로 앱이 0으로 끝나는지 본다.
+Esc가 아무것도 하지 않는다; 옵션 없이 열면 메뉴로 열리고 배경 전투의 틱이 간다; Start Game을 누르면 배치
+단계의 게임 화면, 유닛을 놓고 Main menu를 누른 뒤 다시 Start Game을 누르면 배치가 그대로다; 라운드 중에 Esc를 누르면 메뉴로 가고 다시 들어오면
+배치 단계다; 패널의 Unit Lab에서 Main menu를 누르면 메뉴이고 다시 들어오면 전투 모드다; 패널에서 언어를 한국어로 바꾸면 메뉴도 한국어다;
+키보드만으로(화살표, Enter) 게임에 들어간다; 폰 크기에서 버튼이 아래에 있고 터치로 눌린다(약 2초 기다림); Quit을 누르면 프레임이 멈추고(`requestAnimationFrame`이
+더 오지 않는다) 페이지가 "The program has ended." 줄을 보이며, 다시 읽으면 메뉴부터 시작한다; 콘솔에 WebGPU 오류가 없다. Windows Debug 빌드는
+`--script`로 메뉴에서 Start Game, Main menu, Quit을 돌리고(`--editor`로는 메뉴 없이 시작하는 것도 본다) `[d3d12]` 메시지가 없고 Quit으로 프로세스가 0으로 끝나는지 본다.
 
 **지금 테스트의 수정:** 게임 화면으로 시작한다고 가정하는 손 검사 흐름은 페이지를 `?editor`로 열고, Windows 스크립트는 `--editor`로
 돌린다. 그 밖은 바뀌지 않는다.
@@ -215,17 +215,17 @@ Esc가 아무것도 하지 않는다; 옵션 없이 열면 메뉴로 열리고 �
 | 후보 | 하는 일 | 언어, 라이선스 | 맞는 점 | 걸리는 점 |
 |---|---|---|---|---|
 | **ImGui로 직접 (추천)** | 지금 엔진의 ImGui에 메뉴용 스타일과 그리기 | C (cimgui), MIT | 이미 있다: 터치, 한글 글꼴, IME, 아이콘, 두 플랫폼, 디버그 내보내기와 테스트 방식 | 화려한 애니메이션과 레이아웃은 손으로 한다 |
-| Clay | 즉시 모드 레이아웃(flexbox 비슷한), 그리기는 앱이 | C 헤더 하나, zlib | C이고 작다; 나중의 HUD와 상점의 레이아웃에 좋다 | 글자, 입력, 렌더러는 우리가 붙여야 한다. 버튼 넷에는 과하다 |
+| Clay | 즉시 모드 레이아웃(flexbox 비슷한), 그리기는 앱이 | C 헤더 하나, zlib | C이고 작다; 나중의 HUD와 상점의 레이아웃에 좋다 | 글자, 입력, 렌더러는 우리가 붙여야 한다. 버튼 둘에는 과하다 |
 | RmlUi | HTML/CSS 비슷한 게임 UI | C++, MIT | 디자이너가 문서로 화면을 만든다, 애니메이션 | C++이고 크다; 렌더러와 글꼴(FreeType) 백엔드를 `gpu.h` 위에 새로 써야 한다 |
 | microui, Nuklear | 작은 즉시 모드 UI | C, MIT / 퍼블릭 도메인 | 작다 | ImGui와 하는 일이 겹친다; 둘을 같이 둘 까닭이 없다 |
 
-추천은 **ImGui로 직접**이다. 메뉴는 버튼 몇 개와 콤보 둘이라 새 라이브러리가 줄 것이 없다. 게임 안의 UI(상점, 카드, 체력 바, 결과
+추천은 **ImGui로 직접**이다. 메뉴는 버튼 둘이라 새 라이브러리가 줄 것이 없다. 게임 안의 UI(상점, 카드, 체력 바, 결과
 화면)가 커지면 그 스펙에서 Clay를 다시 본다. 새 라이브러리는 들이지 않는다.
 
 ### 단계
 
-1. **엔진:** `nv_window_quit`, `nv_window_has_option`, 키보드 내비게이션 스위치. 엔진 PR과 서브모듈 옮기기.
-2. **화면과 메뉴:** `Game.editor`(EDITOR는 지금 그대로 시작), `GameScreen`, `game_set_screen`, `menu_view.c`의 메뉴 창(처음, 설정), 레이아웃, Main menu 버튼과 Esc, 페이드, 한국어 행.
+1. **엔진:** `nv_quit`(웹의 페이지 줄 포함), 페이지 주소의 옵션을 `argv`로. 엔진 PR과 서브모듈 옮기기.
+2. **화면과 메뉴:** `Game.editor`(EDITOR는 지금 그대로 시작), `GameScreen`, `game_set_screen`, `menu_view.c`의 메뉴 창(Start Game, Quit), 레이아웃, Main menu 버튼과 Esc, 페이드, 한국어 행.
    배경 전투 없이 빈 땅으로.
 3. **배경 전투:** 비추기와 그 테스트, 돌리기와 다시 시작, 카메라.
 4. **확인과 문서:** 디버그 내보내기(Windows 행 포함), Playwright 검사, 웹과 Windows의 Release와 Debug 빌드, Windows 스크립트, `AGENTS.md`(파일
@@ -234,6 +234,7 @@ Esc가 아무것도 하지 않는다; 옵션 없이 열면 메뉴로 열리고 �
 ### 나중에 (이 스펙 밖)
 
 - **캠페인과 이어하기:** 스테이지가 여럿이 되고 진행을 저장하면(`autobattler.md`의 12) 메뉴의 첫 버튼이 된다.
+- **메뉴의 다른 버튼:** 실험실, 설정 페이지(언어, UI 크기). 지금은 게임 화면의 패널에서 연다.
 - **설정 저장:** 언어와 UI 크기를 `engine/storage.h`로 저장한다. 그림자 품질, 해상도 같은 그래픽 설정도 그때.
 - **오디오:** 메뉴 음악, 버튼 소리, 볼륨 설정(엔진에 오디오가 생긴 뒤).
 - **로고:** 제목을 글자가 아닌 그림으로(이름이 정해진 뒤; 바이너리는 Git LFS).
