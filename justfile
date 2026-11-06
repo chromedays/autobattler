@@ -31,6 +31,11 @@ run config="Debug" *args: (build config)
 script file out=(build_dir / "script"): (build "Debug")
     & {{build_dir}}/Debug/autobattler.exe --script "{{file}}" --out "{{out}}"
 
+# Serve a web build (emcmake's, not the Visual Studio one) at http://localhost:8000/: it rebuilds the game when a file is saved and
+# reloads the open pages when the build changes (engine/docs/specs/dev_server.md).
+dev web_build_dir="build" *args:
+    node engine/tools/dev_server.mjs --build {{web_build_dir}} {{args}}
+
 # Run the C tests of one configuration.
 test config="Debug": (build config)
     ctest --test-dir {{build_dir}} -C {{config}} --output-on-failure
