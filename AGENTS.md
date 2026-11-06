@@ -31,7 +31,7 @@ src/                       the game: battle.c/.h (the rules and the 30 Hz tick; 
                            lab.c/.h (the unit lab's runs on those rules; no GPU), main.c (window, frame loop, debug exports),
                            battle_view.c (drawing, deployment input, the Battle panel), lab_view.c (the unit lab's camera, lines
                            and panel sections), game.h (its state), strings.c (its Korean table)
-data/default.abproj        the rules, units, weapons and the stage (docs/specs/abproj.md)
+data/default.abproj        the rules, the units (the wiki's unit_stats.csv) and the stage (docs/specs/abproj.md, unit_fields.md)
 engine/                    the engine, a submodule: its headers are included as <engine/name.h>; the UI font is engine/assets/fonts/
 tests/                     tests that need no browser, built for Node (web) or natively (Windows) and run with ctest
 tools/dashboard/           the build dashboard (docs/specs/build_dashboard.md): a Cloudflare Worker and Durable Object (src/), its page
@@ -96,15 +96,19 @@ Follow `engine/AGENTS.md` ("Conventions") and `engine/docs/CODING_STANDARD.md`. 
 
 - The auto-battler (`docs/specs/battle.md`): `battle.c` is the rules and reads no GPU, ImGui or clock, so `tests/battle_test.c` runs whole
   rounds; the view (`battle_view.c`) steps it with `battle_tick` at a fixed 30 Hz and only reads it, changing it through `battle_place`,
-  `battle_remove`, `battle_start` and `battle_retry`. The rules (grid, round time, gravity and so on), the units, weapons and the
+  `battle_remove`, `battle_start` and `battle_retry`. The rules (grid, round time, gravity and so on), the units and the
   stage are one text file, `data/default.abproj` (`docs/specs/abproj.md`), read by `defs_read_project` in `defs.c` (a bad
   file blocks Start and is reported with its line). The panel opens, reloads and saves a local `.abproj` (`engine/local_file.h`;
   abproj.md, "Loading and saving"): a good file is put in place by `game_load_project`, a bad one leaves the project in use, and Save
   writes the kept text as it was read. The panel's Rules section edits that text in place, before a round only (`defs_rule_set`,
   `game_set_rule`; abproj.md, "Editing the rules"): a change rewrites only that rule's values and is read whole, a bad one is refused.
   A new key goes in `defs.c`'s field tables and the spec's tables. The format stays at version 1 while it is in development
-  (abproj.md, "Versions"). A unit def is placed as a squad (`squad` units on `footprint` cells a side; battle.md, "Squads"), by its
-  footprint's corner nearest the grid's origin; a rule is read from `defs->rules`, never from a macro, and tests try the format only
+  (abproj.md, "Versions"). A unit block is a row of the wiki's `unit_stats.csv` (`docs/specs/unit_fields.md`): its keys are the CSV's
+  column names and its values the CSV's spellings, one line for each cell that is not empty; the wiki is where unit values are decided.
+  Keys the round does not follow yet are read, checked and kept (`BattleDefs.unfollowed`, warned of once a load) until their rules are
+  built; until then every projectile attack fires the interim shell (`BATTLE_INTERIM_LAUNCH_ANGLE`). A unit def is placed as a squad
+  (`squad_size` units on `footprint_w` x `footprint_d` cells in the wiki's D-07 grid, `battle_squad_grid`), by its footprint's corner
+  nearest the grid's origin; a rule is read from `defs->rules`, never from a macro, and tests try the format only
   with text of their own, never with the file's values.
 - Its viewport and its panel must not overlap (input that starts in the viewport skips ImGui). The UI's size is the engine's
   `ui_scale` times the game's `Game.ui_zoom` (the panel's UI scale combo; 200% on a desktop to start, not saved; battle.md,
@@ -125,9 +129,10 @@ Follow `engine/AGENTS.md` ("Conventions") and `engine/docs/CODING_STANDARD.md`. 
   still is `UNIT_HOLD`, and the round is `endless`. A change of its settings, the unit's values (`defs_unit_set`, `game_set_unit_value`) or
   the rules goes into the run as it goes and is recorded, so `lab_seek` replays it exactly; Restart on change starts the run over instead.
   The view draws `game_shown_battle` with the same code, the lab's meshes and grey targets. Its settings are not saved.
-- Roles (`roles`) are for people sorting units: `battle.c` never reads them, so no round depends on them. A unit's `layer` (ground or
-  air) and a weapon's `targets` decide what can hit what; air units fly at `altitude`, and a shell passes units whose layer its weapon
-  cannot target. Speed controls change only how many ticks a frame runs (the game clock), never the tick, and the effects take the
+- Roles (`roles`) are for people sorting units: `battle.c` never reads them, so no round depends on them. A unit's `unit_layer` (Ground
+  or Air) and its `target_layer` decide what can hit what; air units fly at `altitude_m`, and a shell passes units whose layer its shooter
+  cannot target. A unit's shield (`shield_hp`) is its own and takes a whole hit before its health (the wiki's D-05, D-10); a melee attack
+  hits at once, with no shell (D-13). Speed controls change only how many ticks a frame runs (the game clock), never the tick, and the effects take the
   same game clock's dt. Stepping back is `battle_seek` (a replay from the start, which the deterministic rules make exact).
 - The executable packs only what it reads into `autobattler.data` (`nv_setup_executable(... PRELOAD ...)` in `CMakeLists.txt`): the
   engine's font folder at `/assets/fonts` and `data/` at `/data`. CI installs both builds into the `autobattler-web` artifact

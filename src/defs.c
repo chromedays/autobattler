@@ -21,15 +21,29 @@ typedef struct Reader {
     BattleDefs* defs;
 } Reader;
 
-// A key whose values are numbers, stored at `offset` in the struct being read.
+// A key and its values, stored at `offset` in the struct being read.
 typedef enum FieldKind {
     FIELD_INTEGER, // u32
+    FIELD_WHOLE,   // f32 that the file writes as an integer
     FIELD_NUMBER,  // f32
     FIELD_ANGLE,   // f32, degrees in the file and radians when read
-    FIELD_VECTOR,  // three f32
+    FIELD_VECTOR,  // three f32 (no key takes one now; kept for keys to come)
     FIELD_TICKS,   // u32, seconds in the file and whole ticks when read
     FIELD_GRID,    // two integers, the width and the length, into a BattleRules (their own ranges)
+    FIELD_TEXT,   // char[BATTLE_NAME_SIZE]: the rest of the line, spaces and all, 1 to 31 bytes
+    FIELD_WORD,    // u32: one of `words` (case counts), stored as first_value + its index
+    FIELD_BOOL,    // b32: true or false
 } FieldKind;
+
+// When a unit's key applies (docs/specs/unit_fields.md, "Keys"). What the others depend on is judged when the unit's block ends.
+typedef enum FieldWhen {
+    WHEN_ALWAYS,
+    WHEN_AIR,        // altitude_m: required for unit_layer Air, an error for Ground
+    WHEN_BOTH,       // target_priority: only with target_layer Both
+    WHEN_PROJECTILE, // an error on a Melee unit; `required` holds for the others
+    WHEN_GUIDED,     // a projectile key that `required` holds for only with GuidedProjectile (on other projectiles it is read and kept)
+    WHEN_ARC,        // arc_height_m: a projectile key required for ScriptedArc, an error for Straight
+} FieldWhen;
 
 typedef struct Field {
     const char* key;
@@ -38,54 +52,97 @@ typedef struct Field {
     f64 min, max; // the range of the value (in the file's units); NO_LIMIT for none
     b32 min_open, max_open; // the bound itself is not allowed
     b32 required;
+    const char* const* words; // FIELD_WORD's
+    u32 word_count, first_value;
+    FieldWhen when;
+    b32 unfollowed; // the round does not follow it yet (unit_fields.md, "Interim")
 } Field;
 
-#define UNIT_FIELD(key, kind, member, min, min_open, required) \
-    {key, kind, offsetof(UnitDef, member), min, NO_LIMIT, min_open, false, required}
+global const char* const layer_words[] = {"Ground", "Air"};
+global const char* const target_layer_words[] = {"Ground", "Air", "Both"};
+global const char* const attack_words[] = {"Melee", "UnguidedProjectile", "GuidedProjectile"};
+global const char* const trajectory_words[] = {"Straight", "ScriptedArc"};
+global const char* const guidance_words[] = {"PredictiveInterception"};
+global const char* const target_loss_words[] = {"ContinueStraight"};
+global const char* const bool_words[] = {"false", "true"};
 
-// A unit's `squad` and `footprint` default to 1 (read_unit_header).
+#define WORDS(list) .words = list, .word_count = NV_ARRAY_COUNT(list)
+#define AT(member) .offset = offsetof(UnitDef, member)
+#define PROJECTILE(member) .offset = offsetof(UnitDef, projectile.member)
+
+// The columns of the wiki's unit_stats.csv, in its order (unit_id is the block's name; roles are read on their own).
 global const Field unit_fields[] = {
-    {"cost", FIELD_INTEGER, offsetof(UnitDef, cost), 1, 10000, false, false, true},
-    {"squad", FIELD_INTEGER, offsetof(UnitDef, squad_size), 1, BATTLE_MAX_SQUAD_SIZE, false, false, false},
-    {"footprint", FIELD_INTEGER, offsetof(UnitDef, footprint), 1, BATTLE_MAX_FOOTPRINT, false, false, false},
-    UNIT_FIELD("health", FIELD_NUMBER, health, 0, true, true),
-    UNIT_FIELD("armor", FIELD_NUMBER, armor, 0, false, false),
-    UNIT_FIELD("speed", FIELD_NUMBER, speed, 0, false, true),
-    UNIT_FIELD("radius", FIELD_NUMBER, radius, 0, true, true),
-    UNIT_FIELD("height", FIELD_NUMBER, height, 0, true, true),
-    UNIT_FIELD("altitude", FIELD_NUMBER, altitude, 0, true, false),
+    {.key = "name", .kind = FIELD_TEXT, AT(name), .required = true},
+    {.key = "cost", .kind = FIELD_INTEGER, AT(cost), .min = 1, .max = 10000, .required = true},
+    {.key = "squad_size", .kind = FIELD_INTEGER, AT(squad_size), .min = 1, .max = BATTLE_MAX_SQUAD_SIZE, .required = true},
+    {.key = "unit_layer", .kind = FIELD_WORD, AT(layer), WORDS(layer_words), .required = true},
+    {.key = "target_layer", .kind = FIELD_WORD, AT(target_layer), WORDS(target_layer_words), .required = true},
+    {.key = "target_priority", .kind = FIELD_WORD, AT(target_priority), WORDS(layer_words), .when = WHEN_BOTH, .unfollowed = true},
+    {.key = "footprint_w", .kind = FIELD_INTEGER, AT(footprint_w), .min = 1, .max = BATTLE_MAX_FOOTPRINT, .required = true},
+    {.key = "footprint_d", .kind = FIELD_INTEGER, AT(footprint_d), .min = 1, .max = BATTLE_MAX_FOOTPRINT, .required = true},
+    {.key = "radius_m", .kind = FIELD_NUMBER, AT(radius), .max = NO_LIMIT, .min_open = true, .required = true},
+    {.key = "height_m", .kind = FIELD_NUMBER, AT(height), .max = NO_LIMIT, .min_open = true, .required = true},
+    {.key = "altitude_m", .kind = FIELD_NUMBER, AT(altitude), .max = NO_LIMIT, .min_open = true, .when = WHEN_AIR},
+    {.key = "hp", .kind = FIELD_WHOLE, AT(hp), .min = 1, .max = 1e9, .required = true},
+    {.key = "armor", .kind = FIELD_WHOLE, AT(armor), .max = 1e9, .required = true},
+    {.key = "shield_hp", .kind = FIELD_WHOLE, AT(shield_hp), .min = 1, .max = 1e9},
+    {.key = "move_speed", .kind = FIELD_NUMBER, AT(move_speed), .max = NO_LIMIT, .required = true},
+    {.key = "range", .kind = FIELD_NUMBER, AT(range), .max = NO_LIMIT, .min_open = true, .required = true},
+    {.key = "damage", .kind = FIELD_WHOLE, AT(damage), .max = 1e9, .required = true},
+    {.key = "attack_interval", .kind = FIELD_NUMBER, AT(attack_interval), .max = NO_LIMIT, .min_open = true, .required = true},
+    {.key = "hits_or_shots_per_attack", .kind = FIELD_INTEGER, AT(hits_per_attack), .min = 1, .max = BATTLE_MAX_HITS, .required = true},
+    {.key = "splash_radius", .kind = FIELD_NUMBER, AT(splash_radius), .max = NO_LIMIT, .required = true},
+    {.key = "attack_type", .kind = FIELD_WORD, AT(attack_type), WORDS(attack_words), .required = true},
+    {.key = "initial_speed_mps", .kind = FIELD_NUMBER, PROJECTILE(initial_speed), .max = NO_LIMIT, .min_open = true, .required = true,
+     .when = WHEN_PROJECTILE, .unfollowed = true},
+    {.key = "forward_acceleration_mps2", .kind = FIELD_NUMBER, PROJECTILE(forward_acceleration), .max = NO_LIMIT, .required = true,
+     .when = WHEN_PROJECTILE, .unfollowed = true},
+    {.key = "max_speed_mps", .kind = FIELD_NUMBER, PROJECTILE(max_speed), .max = NO_LIMIT, .min_open = true, .when = WHEN_PROJECTILE,
+     .unfollowed = true},
+    {.key = "lifetime_s", .kind = FIELD_NUMBER, PROJECTILE(lifetime), .max = NO_LIMIT, .min_open = true, .required = true,
+     .when = WHEN_PROJECTILE, .unfollowed = true},
+    {.key = "max_travel_m", .kind = FIELD_NUMBER, PROJECTILE(max_travel), .max = NO_LIMIT, .min_open = true, .required = true,
+     .when = WHEN_PROJECTILE, .unfollowed = true},
+    {.key = "collision_radius_m", .kind = FIELD_NUMBER, PROJECTILE(collision_radius), .max = NO_LIMIT, .min_open = true,
+     .required = true, .when = WHEN_PROJECTILE, .unfollowed = true},
+    {.key = "gravity_scale", .kind = FIELD_NUMBER, PROJECTILE(gravity_scale), .max = NO_LIMIT, .when = WHEN_PROJECTILE, .unfollowed = true},
+    {.key = "turn_rate_deg_s", .kind = FIELD_ANGLE, PROJECTILE(turn_rate), .max = NO_LIMIT, .min_open = true, .required = true,
+     .when = WHEN_GUIDED, .unfollowed = true},
+    {.key = "guidance_delay_s", .kind = FIELD_NUMBER, PROJECTILE(guidance_delay), .max = NO_LIMIT, .required = true,
+     .when = WHEN_GUIDED, .unfollowed = true},
+    {.key = "guidance_mode", .kind = FIELD_WORD, PROJECTILE(guidance_mode), WORDS(guidance_words), .first_value = GUIDANCE_PREDICTIVE_INTERCEPTION,
+     .required = true, .when = WHEN_GUIDED, .unfollowed = true},
+    {.key = "aim_point_scatter_m", .kind = FIELD_NUMBER, PROJECTILE(aim_point_scatter), .max = NO_LIMIT, .when = WHEN_PROJECTILE},
+    {.key = "launch_spread_deg", .kind = FIELD_ANGLE, PROJECTILE(launch_spread), .max = 90, .max_open = true, .when = WHEN_PROJECTILE,
+     .unfollowed = true},
+    {.key = "piercing_count", .kind = FIELD_INTEGER, PROJECTILE(piercing_count), .max = 1e6, .when = WHEN_PROJECTILE, .unfollowed = true},
+    {.key = "interceptable", .kind = FIELD_BOOL, PROJECTILE(interceptable), .when = WHEN_PROJECTILE, .unfollowed = true},
+    {.key = "trajectory_mode", .kind = FIELD_WORD, PROJECTILE(trajectory), WORDS(trajectory_words), .required = true,
+     .when = WHEN_PROJECTILE, .unfollowed = true},
+    {.key = "arc_height_m", .kind = FIELD_NUMBER, PROJECTILE(arc_height), .max = NO_LIMIT, .min_open = true, .when = WHEN_ARC,
+     .unfollowed = true},
+    {.key = "retargeting_allowed", .kind = FIELD_BOOL, PROJECTILE(retargeting_allowed), .when = WHEN_PROJECTILE, .unfollowed = true},
+    {.key = "target_loss_behavior", .kind = FIELD_WORD, PROJECTILE(target_loss), WORDS(target_loss_words),
+     .first_value = TARGET_LOSS_CONTINUE_STRAIGHT, .when = WHEN_GUIDED, .unfollowed = true},
+    {.key = "target_leading", .kind = FIELD_BOOL, PROJECTILE(target_leading), .required = true, .when = WHEN_PROJECTILE, .unfollowed = true},
 };
 
-global const Field weapon_fields[] = {
-    {"range", FIELD_NUMBER, offsetof(WeaponDef, range), 0, NO_LIMIT, true, false, true},
-    {"damage", FIELD_NUMBER, offsetof(WeaponDef, damage), 0, NO_LIMIT, false, false, true},
-    {"cooldown", FIELD_NUMBER, offsetof(WeaponDef, cooldown), 0, NO_LIMIT, true, false, true},
-    {"launch_angle", FIELD_ANGLE, offsetof(WeaponDef, launch_angle), 0, 90, true, true, true},
-    {"spread", FIELD_NUMBER, offsetof(WeaponDef, spread), 0, NO_LIMIT, false, false, false},
-    {"muzzle", FIELD_VECTOR, offsetof(WeaponDef, muzzle), -NO_LIMIT, NO_LIMIT, false, false, false},
-};
-
-global const Field shield_fields[] = {
-    {"radius", FIELD_NUMBER, offsetof(AbilityDef, shield.radius), 0, NO_LIMIT, true, false, true},
-    {"capacity", FIELD_NUMBER, offsetof(AbilityDef, shield.capacity), 0, NO_LIMIT, true, false, true},
-    {"regen", FIELD_NUMBER, offsetof(AbilityDef, shield.regen), 0, NO_LIMIT, false, false, true},
-    {"regen_delay", FIELD_NUMBER, offsetof(AbilityDef, shield.regen_delay), 0, NO_LIMIT, false, false, true},
-};
+#define RULE(member) .offset = offsetof(BattleRules, member)
 
 global const Field rules_fields[] = {
-    {"cell_size", FIELD_NUMBER, offsetof(BattleRules, cell_size), 0, 10, true, false, true},
-    {"grid", FIELD_GRID, 0, 0, 0, false, false, true},
-    {"zone_rows", FIELD_INTEGER, offsetof(BattleRules, zone_rows), 1, BATTLE_MAX_ZONE_ROWS, false, false, true},
-    {"round_time", FIELD_TICKS, offsetof(BattleRules, round_ticks), 0, 600, true, false, true},
-    {"gravity", FIELD_NUMBER, offsetof(BattleRules, gravity), 0, 100, true, false, true},
-    {"retarget_interval", FIELD_TICKS, offsetof(BattleRules, retarget_ticks), 0, 10, true, false, true},
-    {"stop_fraction", FIELD_NUMBER, offsetof(BattleRules, stop_fraction), 0, 1, true, false, true},
-    {"min_damage_fraction", FIELD_NUMBER, offsetof(BattleRules, min_damage_fraction), 0, 1, false, false, true},
+    {.key = "cell_size", .kind = FIELD_NUMBER, RULE(cell_size), .max = 10, .min_open = true, .required = true},
+    {.key = "grid", .kind = FIELD_GRID, .required = true},
+    {.key = "zone_rows", .kind = FIELD_INTEGER, RULE(zone_rows), .min = 1, .max = BATTLE_MAX_ZONE_ROWS, .required = true},
+    {.key = "round_time", .kind = FIELD_TICKS, RULE(round_ticks), .max = 600, .min_open = true, .required = true},
+    {.key = "gravity", .kind = FIELD_NUMBER, RULE(gravity), .max = 100, .min_open = true, .required = true},
+    {.key = "retarget_interval", .kind = FIELD_TICKS, RULE(retarget_ticks), .max = 10, .min_open = true, .required = true},
+    {.key = "stop_fraction", .kind = FIELD_NUMBER, RULE(stop_fraction), .max = 1, .min_open = true, .required = true},
+    {.key = "min_damage_fraction", .kind = FIELD_NUMBER, RULE(min_damage_fraction), .max = 1, .required = true},
 };
 
 global const Field stage_fields[] = {
-    {"supply", FIELD_INTEGER, offsetof(BattleDefs, supply), 1, 100000, false, false, true},
-    {"seed", FIELD_INTEGER, offsetof(BattleDefs, seed), 0, 4294967295.0, false, false, false},
+    {.key = "supply", .kind = FIELD_INTEGER, .offset = offsetof(BattleDefs, supply), .min = 1, .max = 100000, .required = true},
+    {.key = "seed", .kind = FIELD_INTEGER, .offset = offsetof(BattleDefs, seed), .max = 4294967295.0},
 };
 
 #define FIELD_COUNT(fields) ((u32)NV_ARRAY_COUNT(fields))
@@ -121,49 +178,107 @@ internal void report_range(Reader* reader, u32 line, const Field* field)
     nv_text_report(&reader->text, line, "'%s' must be %s", field->key, text);
 }
 
-// Reads a line `key value...` into the struct at `base`. `seen` holds a bit per field already given in this block.
-internal void read_field(Reader* reader, const NvTextLine* line, const Field* field, u32 index, void* base, u32* seen)
+// The text of a line after its key: from its first value to the end of its last, spaces between them kept.
+internal NvTextToken line_rest(const NvTextLine* line)
 {
-    if (*seen & (1u << index)) {
-        nv_text_report(&reader->text, line->number, "'%s' is given twice in this block", field->key);
-        return;
+    const NvTextToken* last = &line->tokens[line->token_count - 1];
+    const char* begin = line->tokens[1].text;
+    return (NvTextToken){.text = begin, .length = (u32)(last->text + last->length - begin)};
+}
+
+// The words a FIELD_WORD takes, for a message: "Ground, Air or Both".
+internal void words_hint(const Field* field, char* out, umm capacity)
+{
+    umm used = 0;
+    out[0] = 0;
+    for (u32 i = 0; i < field->word_count && used < capacity; ++i) {
+        const char* gap = i == 0 ? "" : i + 1 == field->word_count ? " or " : ", ";
+        used += (umm)snprintf(out + used, capacity - used, "%s%s", gap, field->words[i]);
     }
-    *seen |= 1u << index; // a bad value is not "missing" on top of that
+}
+
+// Reads a line `key value...` into the struct at `base`. `seen` holds a bit per field already given in this block. Returns
+// whether the value was good (and stored).
+internal b32 read_field(Reader* reader, const NvTextLine* line, const Field* field, u32 index, void* base, u64* seen)
+{
+    if (*seen & ((u64)1 << index)) {
+        nv_text_report(&reader->text, line->number, "'%s' is given twice in this block", field->key);
+        return false;
+    }
+    *seen |= (u64)1 << index; // a bad value is not "missing" on top of that
+    u8* destination = (u8*)base + field->offset;
+    if (field->kind == FIELD_TEXT) {
+        if (line->token_count < 2) {
+            nv_text_report(&reader->text, line->number, "'%s' takes a text", field->key);
+            return false;
+        }
+        NvTextToken text = line_rest(line);
+        if (text.length >= BATTLE_NAME_SIZE) {
+            nv_text_report(&reader->text, line->number, "'%s' is longer than %d bytes", field->key, BATTLE_NAME_SIZE - 1);
+            return false;
+        }
+        memcpy(destination, text.text, text.length);
+        destination[text.length] = 0;
+        return true;
+    }
+    if (field->kind == FIELD_WORD || field->kind == FIELD_BOOL) {
+        const char* const* words = field->kind == FIELD_BOOL ? bool_words : field->words;
+        u32 count = field->kind == FIELD_BOOL ? (u32)NV_ARRAY_COUNT(bool_words) : field->word_count;
+        char hint[128];
+        if (field->kind == FIELD_BOOL)
+            snprintf(hint, sizeof(hint), "true or false");
+        else
+            words_hint(field, hint, sizeof(hint));
+        if (line->token_count != 2) {
+            nv_text_report(&reader->text, line->number, "'%s' takes %s", field->key, hint);
+            return false;
+        }
+        for (u32 i = 0; i < count; ++i) {
+            if (nv_text_token_is(line->tokens[1], words[i])) {
+                u32 value = field->first_value + i;
+                memcpy(destination, &value, sizeof(value));
+                return true;
+            }
+        }
+        nv_text_report(&reader->text, line->number, "unknown %s '%.*s' (%s)", field->key, nv_text_shown(line->tokens[1]), line->tokens[1].text, hint);
+        return false;
+    }
     u32 values = field_values(field);
     if (line->token_count != 1 + values) {
         nv_text_report(&reader->text, line->number, "'%s' takes %u value%s", field->key, values, values > 1 ? "s" : "");
-        return;
+        return false;
     }
+    b32 integer = field->kind == FIELD_INTEGER || field->kind == FIELD_WHOLE || field->kind == FIELD_GRID;
     f64 numbers[3];
     for (u32 i = 0; i < values; ++i) {
-        NvTextNumber number = nv_text_parse_number(&reader->text, line->number, line->tokens[1 + i], field->kind == FIELD_INTEGER || field->kind == FIELD_GRID);
+        NvTextNumber number = nv_text_parse_number(&reader->text, line->number, line->tokens[1 + i], integer);
         if (!number.ok)
-            return;
+            return false;
         numbers[i] = number.value;
     }
     if (field->kind == FIELD_GRID) {
         if (numbers[0] < 1 || numbers[0] > BATTLE_MAX_GRID_WIDTH) {
             nv_text_report(&reader->text, line->number, "'grid' width must be 1 to %d", BATTLE_MAX_GRID_WIDTH);
-            return;
+            return false;
         }
         if (numbers[1] < 2 || numbers[1] > BATTLE_MAX_GRID_LENGTH) {
             nv_text_report(&reader->text, line->number, "'grid' length must be 2 to %d", BATTLE_MAX_GRID_LENGTH);
-            return;
+            return false;
         }
     } else {
         for (u32 i = 0; i < values; ++i) {
             if (!in_range(field, numbers[i])) {
                 report_range(reader, line->number, field);
-                return;
+                return false;
             }
         }
     }
-    u8* destination = (u8*)base + field->offset;
     switch (field->kind) {
     case FIELD_INTEGER: {
         u32 value = (u32)numbers[0];
         memcpy(destination, &value, sizeof(value));
     } break;
+    case FIELD_WHOLE:
     case FIELD_NUMBER: {
         f32 value = (f32)numbers[0];
         memcpy(destination, &value, sizeof(value));
@@ -185,23 +300,25 @@ internal void read_field(Reader* reader, const NvTextLine* line, const Field* fi
         rules->grid_width = (u32)numbers[0];
         rules->grid_length = (u32)numbers[1];
     } break;
+    case FIELD_TEXT:
+    case FIELD_WORD:
+    case FIELD_BOOL:
+        break; // read above
     }
+    return true;
 }
 
-// What a block is still missing when it ends.
-internal void check_required(Reader* reader, const Field* fields, u32 count, u32 seen, u32 header_line, const char* what, const char* name)
+// What a block is still missing when it ends (its fields that are always required).
+internal void check_required(Reader* reader, const Field* fields, u32 count, u64 seen, u32 header_line, const char* what, const char* name)
 {
     for (u32 i = 0; i < count; ++i)
-        if (fields[i].required && !(seen & (1u << i)))
+        if (fields[i].required && fields[i].when == WHEN_ALWAYS && !(seen & ((u64)1 << i)))
             nv_text_report(&reader->text, header_line, "%s '%s' is missing '%s'", what, name, fields[i].key);
 }
 
 // The project file
 
-typedef enum BlockKind { BLOCK_ROOT, BLOCK_RULES, BLOCK_ROLES, BLOCK_UNIT, BLOCK_WEAPON, BLOCK_SHIELD, BLOCK_STAGE, BLOCK_SKIP } BlockKind;
-
-enum { SEEN_WEAPON = 1 << 16, SEEN_ABILITY = 1 << 17, SEEN_ROLES = 1 << 18, SEEN_LAYER = 1 << 19, SEEN_TARGETS = 1 << 20 };
-// beyond the unit's own fields in Block.seen (a weapon block's `targets` is SEEN_TARGETS)
+typedef enum BlockKind { BLOCK_ROOT, BLOCK_RULES, BLOCK_ROLES, BLOCK_UNIT, BLOCK_STAGE, BLOCK_SKIP } BlockKind;
 
 // An open block. Its lines are indented deeper than its header, all by the same amount.
 typedef struct Block {
@@ -209,15 +326,18 @@ typedef struct Block {
     s32 header_indent;
     s32 child_indent; // -1 until the first line inside it
     u32 header_line;
-    u32 seen;
+    u64 seen;
 } Block;
 
 // The last top-level statement that was in its place; they come in this order (docs/specs/abproj.md, "Syntax").
 typedef enum Top { TOP_NONE, TOP_VERSION, TOP_RULES, TOP_ROLES, TOP_UNIT, TOP_STAGE } Top;
 
+#define UNIT_FIELD_COUNT FIELD_COUNT(unit_fields)
+#define MAX_UNFOLLOWED   UNIT_FIELD_COUNT
+
 typedef struct ProjectReader {
     Reader base;
-    Block stack[3]; // root, then rules, unit or stage, then a unit's weapon or ability
+    Block stack[2]; // root, then rules, roles, a unit or the stage
     u32 depth;
     Top last;
     b32 first_statement; // the next top-level statement is the file's first
@@ -226,12 +346,11 @@ typedef struct ProjectReader {
     UnitDef unit;   // the unit being read
     b32 unit_named; // its name is a good one, so what it lacks can be reported by name
     b32 unit_kept;  // there was room for it
-    u32 footprint_line; // of the unit being read; 0 when it has none
-    u32 squad_line;     // the same for its `squad`
     u32 unit_errors_start;
-    u32 unit_roles;     // the roles of the unit being read, as a mask over BattleDefs.roles
-    u32 altitude_line;  // the unit being read: its `altitude` line when that value is good; 0 when none
-    b32 altitude_seen;  // the unit being read has an `altitude` line, good or not
+    u32 unit_roles; // the roles of the unit being read, as a mask over BattleDefs.roles
+    b32 roles_seen; // it has a `roles` line
+    u64 good;       // its fields read without an error (a bit per unit_fields entry)
+    u32 field_lines[64]; // the line of each of its fields that it gives
 
     u32 rules_errors_start, zone_rows_line;
     b32 rules_ok;   // the rules block was read without an error, so the grid is known
@@ -239,7 +358,107 @@ typedef struct ProjectReader {
     u32 enemy_units;                     // the units the enemy's places make
     u8 taken[BATTLE_MAX_ZONE_ROWS][BATTLE_MAX_GRID_WIDTH]; // enemy cells under a squad, by row in the zone
     u32 place_lines[BATTLE_MAX_PLACES];                   // the line of each enemy place
+
+    const char* unfollowed[MAX_UNFOLLOWED]; // the keys the round does not follow yet, in the order they first came
+    u32 unfollowed_count;
 } ProjectReader;
+
+// The index of a unit key in unit_fields.
+internal u32 unit_field(const char* key)
+{
+    for (u32 i = 0; i < UNIT_FIELD_COUNT; ++i)
+        if (strcmp(unit_fields[i].key, key) == 0)
+            return i;
+    NV_ASSERT(!"not a unit key");
+    return 0;
+}
+
+internal b32 unit_good(const ProjectReader* reader, const char* key)
+{
+    return (reader->good & ((u64)1 << unit_field(key))) != 0;
+}
+
+internal void note_unfollowed(ProjectReader* reader, const char* key)
+{
+    for (u32 i = 0; i < reader->unfollowed_count; ++i)
+        if (reader->unfollowed[i] == key)
+            return;
+    if (reader->unfollowed_count < MAX_UNFOLLOWED)
+        reader->unfollowed[reader->unfollowed_count++] = key;
+}
+
+// What a unit's keys need of each other (docs/specs/unit_fields.md, "Checks when reading"), judged only against the keys they
+// depend on that were read without an error, so that one mistake is one error.
+internal void check_unit(ProjectReader* reader, const Block* block)
+{
+    Reader* base = &reader->base;
+    const UnitDef* unit = &reader->unit;
+    const char* name = unit->id;
+    b32 attack_known = unit_good(reader, "attack_type");
+    b32 layer_known = unit_good(reader, "unit_layer");
+    b32 target_layer_known = unit_good(reader, "target_layer");
+    b32 trajectory_known = unit_good(reader, "trajectory_mode");
+    for (u32 i = 0; i < UNIT_FIELD_COUNT; ++i) {
+        const Field* field = &unit_fields[i];
+        b32 given = (block->seen & ((u64)1 << i)) != 0;
+        u32 line = reader->field_lines[i];
+        switch (field->when) {
+        case WHEN_ALWAYS:
+            break; // check_required
+        case WHEN_AIR:
+            if (layer_known && unit->layer == UNIT_LAYER_AIR && !given)
+                nv_text_report(&base->text, block->header_line, "unit '%s' flies (unit_layer Air) and needs '%s'", name, field->key);
+            if (layer_known && unit->layer == UNIT_LAYER_GROUND && given)
+                nv_text_report(&base->text, line, "'%s' is only for air units", field->key);
+            break;
+        case WHEN_BOTH:
+            if (target_layer_known && unit->target_layer != TARGET_LAYER_BOTH && given)
+                nv_text_report(&base->text, line, "'%s' is only for target_layer Both", field->key);
+            break;
+        case WHEN_PROJECTILE:
+        case WHEN_GUIDED:
+        case WHEN_ARC:
+            if (!attack_known)
+                break;
+            if (unit->attack_type == ATTACK_MELEE) {
+                if (given)
+                    nv_text_report(&base->text, line, "'%s' is for projectile attacks; unit '%s' is Melee", field->key, name);
+                break;
+            }
+            if (field->when == WHEN_ARC) {
+                if (trajectory_known && unit->projectile.trajectory == TRAJECTORY_SCRIPTED_ARC && !given)
+                    nv_text_report(&base->text, block->header_line, "unit '%s' is missing '%s'", name, field->key);
+                if (trajectory_known && unit->projectile.trajectory == TRAJECTORY_STRAIGHT && given)
+                    nv_text_report(&base->text, line, "'%s' is only for ScriptedArc", field->key);
+                break;
+            }
+            b32 applies = field->when == WHEN_PROJECTILE || unit->attack_type == ATTACK_GUIDED;
+            if (field->required && applies && !given)
+                nv_text_report(&base->text, block->header_line, "unit '%s' is missing '%s'", name, field->key);
+            break;
+        }
+    }
+}
+
+// The keys of a unit that the round does not follow yet: the projectile keys it gives (but aim_point_scatter_m), and the attack's
+// values the interim round does otherwise (unit_fields.md, "Interim").
+internal void note_unit_unfollowed(ProjectReader* reader, u64 seen)
+{
+    const UnitDef* unit = &reader->unit;
+    for (u32 i = 0; i < UNIT_FIELD_COUNT; ++i) {
+        const Field* field = &unit_fields[i];
+        b32 given = (seen & ((u64)1 << i)) != 0;
+        b32 unfollowed = given && field->unfollowed;
+        if (strcmp(field->key, "attack_type") == 0)
+            unfollowed = given && unit->attack_type != ATTACK_MELEE;
+        else if (strcmp(field->key, "hits_or_shots_per_attack") == 0)
+            unfollowed = given && unit->attack_type != ATTACK_MELEE && unit->hits_per_attack > 1;
+        else if (strcmp(field->key, "splash_radius") == 0)
+            unfollowed = given && unit->splash_radius > 0.0f;
+        if (unfollowed)
+            note_unfollowed(reader, field->key);
+    }
+}
 
 internal void close_block(ProjectReader* reader)
 {
@@ -254,42 +473,43 @@ internal void close_block(ProjectReader* reader)
             nv_text_report(&base->text, reader->zone_rows_line, "'zone_rows' must be at most %u (half the grid's length)", rules->grid_length / 2);
         reader->rules_ok = base->text.errors == reader->rules_errors_start;
     } break;
-    case BLOCK_UNIT:
+    case BLOCK_UNIT: {
+        UnitDef* unit = &reader->unit;
         if (reader->unit_named) {
-            check_required(base, unit_fields, FIELD_COUNT(unit_fields), block->seen, block->header_line, "unit", reader->unit.name);
-            if (!(block->seen & SEEN_WEAPON))
-                nv_text_report(&base->text, block->header_line, "unit '%s' needs a weapon", reader->unit.name);
-            if (reader->unit.layer == UNIT_LAYER_AIR && !reader->altitude_seen)
-                nv_text_report(&base->text, block->header_line, "unit '%s' flies (layer air) and needs 'altitude'", reader->unit.name);
-            if (reader->unit.layer == UNIT_LAYER_GROUND && reader->altitude_line)
-                nv_text_report(&base->text, reader->altitude_line, "'altitude' is only for air units");
+            check_required(base, unit_fields, UNIT_FIELD_COUNT, block->seen, block->header_line, "unit", unit->id);
+            check_unit(reader, block);
         }
-        // A squad must fit in a zone, and its units must not stand on each other (judged only against rules that were read right,
-        // and for a unit read without an error, so one mistake is one error).
-        if (reader->rules_ok && reader->footprint_line) {
-            const BattleRules* rules = &defs->rules;
-            u32 most = rules->zone_rows < rules->grid_width ? rules->zone_rows : rules->grid_width;
-            if (reader->unit.footprint > most)
-                nv_text_report(&base->text, reader->footprint_line, "'footprint' must be at most %u (a zone's rows and width)", most);
+        unit->targets = unit->target_layer == TARGET_LAYER_BOTH ? (TARGET_GROUND | TARGET_AIR)
+                        : unit->target_layer == TARGET_LAYER_AIR ? TARGET_AIR : TARGET_GROUND;
+        // A squad must fit in a zone, and its units must not stand on each other, either way its footprint may later be turned
+        // (judged only against rules that were read right, and for a unit read without an error, so one mistake is one error).
+        const BattleRules* rules = &defs->rules;
+        if (reader->rules_ok && unit_good(reader, "footprint_w") && unit->footprint_w > rules->grid_width)
+            nv_text_report(&base->text, reader->field_lines[unit_field("footprint_w")], "'footprint_w' must be at most %u (the grid's width)",
+                           rules->grid_width);
+        if (reader->rules_ok && unit_good(reader, "footprint_d") && unit->footprint_d > rules->zone_rows)
+            nv_text_report(&base->text, reader->field_lines[unit_field("footprint_d")], "'footprint_d' must be at most %u (a zone's rows)",
+                           rules->zone_rows);
+        if (reader->rules_ok && reader->unit_named && base->text.errors == reader->unit_errors_start) {
+            for (u32 turned = 0; turned < 2; ++turned) {
+                u32 w = turned ? unit->footprint_d : unit->footprint_w, d = turned ? unit->footprint_w : unit->footprint_d;
+                SquadGrid grid = battle_squad_grid(unit->squad_size, w, d);
+                f32 across = (f32)w * rules->cell_size / (f32)grid.columns, along = (f32)d * rules->cell_size / (f32)grid.rows;
+                f32 apart = fminf(across, along);
+                if (apart < 2.0f * unit->radius) {
+                    nv_text_report(&base->text, reader->field_lines[unit_field("squad_size")], "%u unit%s on %ux%u cells stand%s %.3g m apart%s, under their width (%.3g m)",
+                                   unit->squad_size, unit->squad_size > 1 ? "s" : "", unit->footprint_w, unit->footprint_d,
+                                   unit->squad_size > 1 ? "" : "s", apart, turned ? " when turned" : "", 2.0f * unit->radius);
+                    break;
+                }
+            }
         }
-        if (reader->rules_ok && reader->squad_line && base->text.errors == reader->unit_errors_start) {
-            const UnitDef* unit = &reader->unit;
-            f32 apart = (f32)unit->footprint * defs->rules.cell_size / (f32)battle_squad_columns(unit->squad_size);
-            if (unit->squad_size > 1 && apart < 2.0f * unit->radius)
-                nv_text_report(&base->text, reader->squad_line, "%u units on %ux%u cells stand %.3g m apart, under their width (%.3g m)", unit->squad_size,
-                       unit->footprint, unit->footprint, apart, 2.0f * unit->radius);
-        }
+        note_unit_unfollowed(reader, block->seen);
         if (reader->unit_kept) {
             defs->unit_roles[defs->unit_count] = reader->unit_roles;
-            defs->units[defs->unit_count++] = reader->unit;
+            defs->units[defs->unit_count++] = *unit;
         }
-        break;
-    case BLOCK_WEAPON:
-        check_required(base, weapon_fields, FIELD_COUNT(weapon_fields), block->seen, block->header_line, "weapon", reader->unit.weapon.name);
-        break;
-    case BLOCK_SHIELD:
-        check_required(base, shield_fields, FIELD_COUNT(shield_fields), block->seen, block->header_line, "ability", "shield");
-        break;
+    } break;
     case BLOCK_STAGE:
         check_required(base, stage_fields, FIELD_COUNT(stage_fields), block->seen, block->header_line, "block", "stage");
         if (reader->places_seen == 0 && base->text.errors == reader->stage_errors_start)
@@ -349,26 +569,25 @@ internal void read_unit_header(ProjectReader* reader, const NvTextLine* line)
 {
     Reader* base = &reader->base;
     BattleDefs* defs = base->defs;
-    reader->unit = (UnitDef){.squad_size = 1, .footprint = 1, .weapon = {.targets = TARGET_GROUND}}; // without `squad` and `footprint`, a unit is a squad of one
+    reader->unit = (UnitDef){0};
     reader->unit_named = false;
     reader->unit_kept = false;
-    reader->footprint_line = 0;
     reader->unit_roles = 0;
-    reader->altitude_line = 0;
-    reader->altitude_seen = false;
-    reader->squad_line = 0;
+    reader->roles_seen = false;
+    reader->good = 0;
+    memset(reader->field_lines, 0, sizeof(reader->field_lines));
     reader->unit_errors_start = base->text.errors;
     open_block(reader, BLOCK_UNIT, line);
     if (line->token_count != 2) {
-        nv_text_report(&base->text, line->number, "'unit' takes a name");
+        nv_text_report(&base->text, line->number, "'unit' takes a unit_id");
         return;
     }
-    if (!nv_text_parse_name(&base->text, line->number, line->tokens[1], reader->unit.name, BATTLE_NAME_SIZE))
+    if (!nv_text_parse_name(&base->text, line->number, line->tokens[1], reader->unit.id, BATTLE_NAME_SIZE))
         return;
     reader->unit_named = true;
     for (u32 i = 0; i < defs->unit_count; ++i) {
-        if (strcmp(defs->units[i].name, reader->unit.name) == 0) {
-            nv_text_report(&base->text, line->number, "unit '%s' is defined twice", reader->unit.name);
+        if (strcmp(defs->units[i].id, reader->unit.id) == 0) {
+            nv_text_report(&base->text, line->number, "unit '%s' is defined twice", reader->unit.id);
             return;
         }
     }
@@ -446,62 +665,33 @@ internal void read_top_line(ProjectReader* reader, const NvTextLine* line)
 
 // Lines inside blocks
 
-// Reads the words of `line` from `first` on as names from a fixed list (`count` names, `stride` bytes apart) into `mask`: bit i is
-// name i. An unknown name (`hint` says what the names are) and a name given twice are reported; `mask` is then left as it was.
-internal b32 read_name_mask(Reader* reader, const NvTextLine* line, u32 first, const char* names, u32 count, u32 stride, const char* what,
-                            const char* hint, u32* mask)
+// A role's name: text of 1 to 31 bytes with no ',' (a unit's `roles` line lists them with commas). Copies it into `role`.
+internal b32 read_role_name(Reader* reader, u32 line, NvTextToken text, char role[BATTLE_NAME_SIZE])
 {
-    u32 bits = 0;
-    for (u32 t = first; t < line->token_count; ++t) {
-        NvTextToken word = line->tokens[t];
-        u32 i = 0;
-        while (i < count && !nv_text_token_is(word, names + i * stride))
-            ++i;
-        if (i == count) {
-            nv_text_report(&reader->text, line->number, "unknown %s '%.*s' (%s)", what, nv_text_shown(word), word.text, hint);
+    for (u32 i = 0; i < text.length; ++i) {
+        if (text.text[i] == ',') {
+            nv_text_report(&reader->text, line, "a role's name cannot hold ','");
             return false;
         }
-        if (bits & (1u << i)) {
-            nv_text_report(&reader->text, line->number, "%s '%.*s' is given twice", what, nv_text_shown(word), word.text);
-            return false;
-        }
-        bits |= 1u << i;
     }
-    *mask = bits;
+    if (text.length >= BATTLE_NAME_SIZE) {
+        nv_text_report(&reader->text, line, "a role's name is longer than %d bytes", BATTLE_NAME_SIZE - 1);
+        return false;
+    }
+    memcpy(role, text.text, text.length);
+    role[text.length] = 0;
     return true;
 }
 
-// A weapon's `targets` line: the layers it can hit, as words (`ground`, `air`, or both). Given once, with at least one.
-global const char layer_names[2][8] = {"ground", "air"}; // by layer: bit i of a target mask is layer i
-internal void read_targets(ProjectReader* reader, const NvTextLine* line, Block* block)
-{
-    Reader* base = &reader->base;
-    b32 repeated = (block->seen & SEEN_TARGETS) != 0;
-    block->seen |= SEEN_TARGETS;
-    if (repeated) {
-        nv_text_report(&base->text, line->number, "'targets' is given twice in this weapon");
-        return;
-    }
-    if (line->token_count < 2) {
-        nv_text_report(&base->text, line->number, "'targets' takes ground, air or both");
-        return;
-    }
-    u32 mask = 0;
-    if (read_name_mask(base, line, 1, (const char*)layer_names, 2, 8, "target", "ground or air", &mask))
-        reader->unit.weapon.targets = mask;
-}
-
-// A line of the `roles` block: one role's name, declared once.
+// A line of the `roles` block: one role's name (spaces and all), declared once.
 internal void read_role(ProjectReader* reader, const NvTextLine* line)
 {
     Reader* base = &reader->base;
     BattleDefs* defs = base->defs;
-    if (line->token_count != 1) {
-        nv_text_report(&base->text, line->number, "a role line takes one name");
-        return;
-    }
+    const NvTextToken* last = &line->tokens[line->token_count - 1];
+    NvTextToken text = {.text = line->tokens[0].text, .length = (u32)(last->text + last->length - line->tokens[0].text)};
     char role[BATTLE_NAME_SIZE];
-    if (!nv_text_parse_name(&base->text, line->number, line->tokens[0], role, BATTLE_NAME_SIZE))
+    if (!read_role_name(base, line->number, text, role))
         return;
     for (u32 i = 0; i < defs->role_count; ++i) {
         if (strcmp(defs->roles[i], role) == 0) {
@@ -516,82 +706,74 @@ internal void read_role(ProjectReader* reader, const NvTextLine* line)
     memcpy(defs->roles[defs->role_count++], role, BATTLE_NAME_SIZE);
 }
 
+// A unit's `roles` line: declared roles, with commas between them (`roles Chaff/Screen, Flanker`), each once.
+internal void read_unit_roles(ProjectReader* reader, const NvTextLine* line)
+{
+    Reader* base = &reader->base;
+    const BattleDefs* defs = base->defs;
+    if (reader->roles_seen) {
+        nv_text_report(&base->text, line->number, "'roles' is given twice in this block");
+        return;
+    }
+    reader->roles_seen = true;
+    if (line->token_count < 2) {
+        nv_text_report(&base->text, line->number, "'roles' takes at least one role");
+        return;
+    }
+    NvTextToken rest = line_rest(line);
+    u32 mask = 0;
+    const char* end = rest.text + rest.length;
+    for (const char* item = rest.text; item <= end;) {
+        const char* comma = item;
+        while (comma < end && *comma != ',')
+            ++comma;
+        const char* begin = item;
+        const char* stop = comma;
+        while (begin < stop && *begin == ' ')
+            ++begin;
+        while (stop > begin && stop[-1] == ' ')
+            --stop;
+        if (begin == stop) {
+            nv_text_report(&base->text, line->number, "'roles' has an empty role (between two commas, or at an end)");
+            return;
+        }
+        NvTextToken role = {.text = begin, .length = (u32)(stop - begin)};
+        u32 i = 0;
+        while (i < defs->role_count && !nv_text_token_is(role, defs->roles[i]))
+            ++i;
+        if (i == defs->role_count) {
+            nv_text_report(&base->text, line->number, "unknown role '%.*s' (declare it under 'roles')", nv_text_shown(role), role.text);
+            return;
+        }
+        if (mask & (1u << i)) {
+            nv_text_report(&base->text, line->number, "role '%.*s' is given twice", nv_text_shown(role), role.text);
+            return;
+        }
+        mask |= 1u << i;
+        item = comma + 1;
+    }
+    reader->unit_roles = mask;
+}
+
 internal void read_unit_line(ProjectReader* reader, const NvTextLine* line, Block* block)
 {
     Reader* base = &reader->base;
     NvTextToken key = line->tokens[0];
-    if (nv_text_token_is(key, "weapon") || nv_text_token_is(key, "ability")) {
-        b32 is_weapon = nv_text_token_is(key, "weapon");
-        u32 seen_bit = is_weapon ? SEEN_WEAPON : SEEN_ABILITY;
-        b32 repeated = (block->seen & seen_bit) != 0;
-        block->seen |= seen_bit;
-        if (repeated)
-            nv_text_report(&base->text, line->number, "a unit has at most one '%s'", is_weapon ? "weapon" : "ability");
-        if (line->token_count != 2) {
-            nv_text_report(&base->text, line->number, "'%s' takes %s", is_weapon ? "weapon" : "ability", is_weapon ? "a name" : "a kind");
-            open_block(reader, BLOCK_SKIP, line);
-        } else if (is_weapon) {
-            // A repeated weapon is read into scratch: the first one stays what the unit has.
-            b32 named = nv_text_parse_name(&base->text, line->number, line->tokens[1],
-                                         repeated ? (char[BATTLE_NAME_SIZE]){0} : reader->unit.weapon.name, BATTLE_NAME_SIZE);
-            open_block(reader, repeated || !named ? BLOCK_SKIP : BLOCK_WEAPON, line);
-        } else if (nv_text_token_is(line->tokens[1], "shield") && !repeated) {
-            reader->unit.ability.kind = ABILITY_SHIELD;
-            open_block(reader, BLOCK_SHIELD, line);
-        } else {
-            if (!nv_text_token_is(line->tokens[1], "shield"))
-                nv_text_report(&base->text, line->number, "unknown ability '%.*s' (kinds: shield)", nv_text_shown(line->tokens[1]), line->tokens[1].text);
-            open_block(reader, BLOCK_SKIP, line);
-        }
-        return;
-    }
-    if (nv_text_token_is(key, "layer")) {
-        b32 repeated = (block->seen & SEEN_LAYER) != 0;
-        block->seen |= SEEN_LAYER;
-        if (repeated)
-            nv_text_report(&base->text, line->number, "'layer' is given twice in this block");
-        else if (line->token_count != 2)
-            nv_text_report(&base->text, line->number, "'layer' takes ground or air");
-        else if (nv_text_token_is(line->tokens[1], "ground"))
-            reader->unit.layer = UNIT_LAYER_GROUND;
-        else if (nv_text_token_is(line->tokens[1], "air"))
-            reader->unit.layer = UNIT_LAYER_AIR;
-        else
-            nv_text_report(&base->text, line->number, "unknown layer '%.*s' (ground or air)", nv_text_shown(line->tokens[1]), line->tokens[1].text);
-        return;
-    }
     if (nv_text_token_is(key, "roles")) {
-        b32 repeated = (block->seen & SEEN_ROLES) != 0;
-        block->seen |= SEEN_ROLES;
-        if (repeated) {
-            nv_text_report(&base->text, line->number, "'roles' is given twice in this block");
-        } else if (line->token_count < 2) {
-            nv_text_report(&base->text, line->number, "'roles' takes at least one role");
-        } else {
-            u32 mask = 0;
-            BattleDefs* defs = base->defs;
-            if (read_name_mask(base, line, 1, (const char*)defs->roles, defs->role_count, BATTLE_NAME_SIZE, "role",
-                               "declare it under 'roles'", &mask))
-                reader->unit_roles = mask;
-        }
+        read_unit_roles(reader, line);
         return;
     }
-    const Field* field = find_field(unit_fields, FIELD_COUNT(unit_fields), key);
+    const Field* field = find_field(unit_fields, UNIT_FIELD_COUNT, key);
     if (!field) {
         nv_text_report(&base->text, line->number, "unknown key '%.*s'", nv_text_shown(key), key.text);
         return;
     }
-    u32 errors = base->text.errors;
-    read_field(base, line, field, (u32)(field - unit_fields), &reader->unit, &block->seen);
-    if (nv_text_token_is(key, "footprint") && base->text.errors == errors)
-        reader->footprint_line = line->number;
-    if (nv_text_token_is(key, "altitude")) {
-        reader->altitude_seen = true;
-        if (base->text.errors == errors)
-            reader->altitude_line = line->number;
-    }
-    if (nv_text_token_is(key, "squad") && base->text.errors == errors)
-        reader->squad_line = line->number;
+    u32 index = (u32)(field - unit_fields);
+    b32 repeated = (block->seen & ((u64)1 << index)) != 0;
+    if (!repeated)
+        reader->field_lines[index] = line->number;
+    if (read_field(base, line, field, index, &reader->unit, &block->seen))
+        reader->good |= (u64)1 << index;
 }
 
 typedef struct UnitIndex {
@@ -599,11 +781,11 @@ typedef struct UnitIndex {
     u32 index; // into BattleDefs.units
 } UnitIndex;
 
-// Fails when no unit has that name.
-internal UnitIndex find_unit(const BattleDefs* defs, NvTextToken name)
+// Fails when no unit has that unit_id.
+internal UnitIndex find_unit(const BattleDefs* defs, NvTextToken id)
 {
     for (u32 i = 0; i < defs->unit_count; ++i)
-        if (nv_text_token_is(name, defs->units[i].name))
+        if (nv_text_token_is(id, defs->units[i].id))
             return (UnitIndex){.ok = true, .index = i};
     return (UnitIndex){0};
 }
@@ -614,7 +796,7 @@ internal void read_place(ProjectReader* reader, const NvTextLine* line)
     BattleDefs* defs = base->defs;
     const BattleRules* rules = &defs->rules;
     if (line->token_count != 4) {
-        nv_text_report(&base->text, line->number, "'place' takes a unit name, a cell x and a cell row");
+        nv_text_report(&base->text, line->number, "'place' takes a unit_id, a cell x and a cell row");
         return;
     }
     ++reader->places_seen;
@@ -634,12 +816,12 @@ internal void read_place(ProjectReader* reader, const NvTextLine* line)
         return; // the grid is not known, so a cell cannot be judged (and no cell is reported against a wrong grid)
     // The cell is the corner of the squad's footprint nearest the grid's origin; the whole footprint is in the enemy zone (a
     // footprint larger than the zone was reported with its unit). An unknown unit's cell is judged as a single cell.
-    u32 footprint = unit.ok ? defs->units[unit.index].footprint : 1;
-    if (footprint > rules->zone_rows || footprint > rules->grid_width)
+    u32 w = unit.ok ? defs->units[unit.index].footprint_w : 1, d = unit.ok ? defs->units[unit.index].footprint_d : 1;
+    if (w > rules->grid_width || d > rules->zone_rows)
         return;
     f64 x = x_number.value, row = row_number.value;
     u32 first_row = battle_enemy_first_row(rules);
-    u32 last_x = rules->grid_width - footprint, last_row = rules->grid_length - footprint;
+    u32 last_x = rules->grid_width - w, last_row = rules->grid_length - d;
     if (x < 0 || x > last_x) {
         nv_text_report(&base->text, line->number, "cell x must be 0 to %u", last_x);
         ok = false;
@@ -652,8 +834,8 @@ internal void read_place(ProjectReader* reader, const NvTextLine* line)
         return;
     const UnitDef* def = &defs->units[unit.index];
     u32 cell_x = (u32)x, cell_row = (u32)row - first_row;
-    for (u32 r = cell_row; r < cell_row + footprint; ++r) {
-        for (u32 c = cell_x; c < cell_x + footprint; ++c) {
+    for (u32 r = cell_row; r < cell_row + d; ++r) {
+        for (u32 c = cell_x; c < cell_x + w; ++c) {
             if (reader->taken[r][c]) {
                 nv_text_report(&base->text, line->number, "cell (%u, %u) already has a unit", c, r + first_row);
                 return;
@@ -664,8 +846,8 @@ internal void read_place(ProjectReader* reader, const NvTextLine* line)
         nv_text_report(&base->text, line->number, "the enemy has more than %d units", BATTLE_MAX_TEAM_UNITS);
         return;
     }
-    for (u32 r = cell_row; r < cell_row + footprint; ++r)
-        for (u32 c = cell_x; c < cell_x + footprint; ++c)
+    for (u32 r = cell_row; r < cell_row + d; ++r)
+        for (u32 c = cell_x; c < cell_x + w; ++c)
             reader->taken[r][c] = 1;
     reader->enemy_units += def->squad_size;
     reader->place_lines[defs->enemy_count] = line->number;
@@ -719,21 +901,6 @@ internal void read_project_line(ProjectReader* reader, const NvTextLine* line)
         else
             read_field(base, line, field, (u32)(field - stage_fields), base->defs, &block->seen);
     } break;
-    case BLOCK_WEAPON:
-    case BLOCK_SHIELD: {
-        if (block->kind == BLOCK_WEAPON && nv_text_token_is(key, "targets")) {
-            read_targets(reader, line, block);
-            break;
-        }
-        const Field* fields = block->kind == BLOCK_WEAPON ? weapon_fields : shield_fields;
-        u32 count = block->kind == BLOCK_WEAPON ? FIELD_COUNT(weapon_fields) : FIELD_COUNT(shield_fields);
-        void* data = block->kind == BLOCK_WEAPON ? (void*)&reader->unit.weapon : (void*)&reader->unit.ability;
-        const Field* field = find_field(fields, count, key);
-        if (!field)
-            nv_text_report(&base->text, line->number, "unknown key '%.*s'", nv_text_shown(key), key.text);
-        else
-            read_field(base, line, field, (u32)(field - fields), data, &block->seen);
-    } break;
     case BLOCK_SKIP:
         break;
     }
@@ -773,6 +940,10 @@ b32 defs_read_project(BattleDefs* defs, const char* file_name, const char* text,
         else if (reader.last < TOP_STAGE)
             nv_text_report(&reader.base.text, 0, "missing 'stage'");
     }
+    umm used = 0;
+    defs->unfollowed[0] = 0;
+    for (u32 i = 0; i < reader.unfollowed_count && used < sizeof(defs->unfollowed); ++i)
+        used += (umm)snprintf(defs->unfollowed + used, sizeof(defs->unfollowed) - used, "%s%s", i ? ", " : "", reader.unfollowed[i]);
     return reader.base.text.errors == 0;
 }
 
@@ -850,7 +1021,7 @@ internal u32 format_value(char* out, umm capacity, f64 value, b32 integer)
 internal umm replace_values(const char* text, umm size, const Field* field, const NvTextLine* line, const char* end,
                             const f64* values, u32 count, char* out, umm capacity)
 {
-    b32 integer = field->kind == FIELD_INTEGER || field->kind == FIELD_GRID;
+    b32 integer = field->kind == FIELD_INTEGER || field->kind == FIELD_WHOLE || field->kind == FIELD_GRID;
     char written[96];
     u32 used = 0;
     for (u32 i = 0; i < count; ++i) {
@@ -896,38 +1067,37 @@ umm defs_rule_set(const char* text, umm size, const char* key, const f64* values
 
 // Editing a unit def (docs/specs/unit_lab.md, "Editing the unit's values"), on the text of a project read without errors.
 
-// A key of a unit's block, its weapon's or its ability's: its line when the file gives it, and where a line for it goes when it
-// does not. Fails (zeroed) when the unit, the block or the key is not there.
+// A number key of a unit: its line when the file gives it, and where a line for it goes when it does not. Fails (zeroed) when the
+// unit or the key is not there.
 typedef struct UnitKeyLine {
     b32 ok;
     const Field* field;
     b32 given; // the key's line is in the file: `line` and `end`
     NvTextLine line;
     const char* end;
-    const char* insert_at; // otherwise: a new line goes here (the start of the line after the block's last key)
-    b32 insert_newline_first; // the block's last line ends the text with no line break
-    u32 indent;               // the block's keys' indentation
+    const char* insert_at; // otherwise: a new line goes here (the start of the line after the unit's last key)
+    b32 insert_newline_first; // the unit's last line ends the text with no line break
+    u32 indent;               // the unit's keys' indentation
     b32 crlf;                 // the text's lines end in "\r\n"
 } UnitKeyLine;
 
-internal UnitKeyLine find_unit_key(const char* text, umm size, const char* unit, u32 block, const char* key)
+internal b32 is_number_field(const Field* field)
 {
-    const Field* fields = block == DEFS_BLOCK_WEAPON ? weapon_fields : block == DEFS_BLOCK_ABILITY ? shield_fields : unit_fields;
-    u32 field_count = block == DEFS_BLOCK_WEAPON ? FIELD_COUNT(weapon_fields)
-                      : block == DEFS_BLOCK_ABILITY ? FIELD_COUNT(shield_fields) : FIELD_COUNT(unit_fields);
-    if (block > DEFS_BLOCK_ABILITY)
-        return (UnitKeyLine){0};
+    return field->kind == FIELD_INTEGER || field->kind == FIELD_WHOLE || field->kind == FIELD_NUMBER || field->kind == FIELD_ANGLE;
+}
+
+internal UnitKeyLine find_unit_key(const char* text, umm size, const char* unit, const char* key)
+{
     const Field* field = NULL;
-    for (u32 i = 0; i < field_count; ++i)
-        if (strcmp(fields[i].key, key) == 0)
-            field = &fields[i];
+    for (u32 i = 0; i < UNIT_FIELD_COUNT; ++i)
+        if (strcmp(unit_fields[i].key, key) == 0 && is_number_field(&unit_fields[i]))
+            field = &unit_fields[i];
     if (!field)
         return (UnitKeyLine){0};
 
     UnitKeyLine found = {.field = field};
     NvTextLines lines = {text, size, 0, 0};
-    b32 in_unit = false, in_block = false, past_unit_keys = false;
-    u32 unit_indent = 0;
+    b32 in_unit = false;
     for (NvTextLineRange text_line = nv_text_next_line(&lines); text_line.ok; text_line = nv_text_next_line(&lines)) {
         NvTextTokenized tokenized = nv_text_tokenize(NULL, text_line.begin, text_line.end, lines.number);
         const NvTextLine* line = &tokenized.line;
@@ -937,7 +1107,7 @@ internal UnitKeyLine find_unit_key(const char* text, umm size, const char* unit,
             if (in_unit)
                 break; // the unit's block has ended
             in_unit = line->token_count == 2 && nv_text_token_is(line->tokens[0], "unit") && nv_text_token_is(line->tokens[1], unit);
-            if (in_unit && block == DEFS_BLOCK_UNIT) {
+            if (in_unit) {
                 found.ok = true;
                 found.insert_at = text_line.end; // after the header, until a key comes
             }
@@ -945,86 +1115,50 @@ internal UnitKeyLine find_unit_key(const char* text, umm size, const char* unit,
         }
         if (!in_unit)
             continue;
-        if (!unit_indent)
-            unit_indent = line->indent;
-        b32 header = line->indent == unit_indent && line->token_count == 2
-                     && (nv_text_token_is(line->tokens[0], "weapon") || nv_text_token_is(line->tokens[0], "ability"));
-        if (line->indent == unit_indent) {
-            in_block = header && (block == DEFS_BLOCK_WEAPON ? nv_text_token_is(line->tokens[0], "weapon")
-                                  : block == DEFS_BLOCK_ABILITY ? nv_text_token_is(line->tokens[0], "ability")
-                                                                    && nv_text_token_is(line->tokens[1], "shield")
-                                                                : false);
-            past_unit_keys = past_unit_keys || header;
-            if (in_block) {
-                found.ok = true;
-                found.insert_at = text_line.end;
-                found.indent = 0;
-                continue;
-            }
-            if (block == DEFS_BLOCK_UNIT && !header) {
-                if (!past_unit_keys) { // a new key goes with the unit's keys, before its weapon and ability
-                    found.insert_at = text_line.end;
-                    found.indent = line->indent;
-                }
-                if (nv_text_token_is(line->tokens[0], key) && line->token_count == 1 + field_values(field)) {
-                    found.given = true;
-                    found.line = *line;
-                    found.end = text_line.end;
-                }
-            }
-            continue;
-        }
-        if (in_block) { // a key of the weapon or the ability
-            found.insert_at = text_line.end;
-            found.indent = line->indent;
-            if (nv_text_token_is(line->tokens[0], key) && line->token_count == 1 + field_values(field)) {
-                found.given = true;
-                found.line = *line;
-                found.end = text_line.end;
-            }
+        found.insert_at = text_line.end;
+        found.indent = line->indent;
+        if (nv_text_token_is(line->tokens[0], key) && line->token_count == 2) {
+            found.given = true;
+            found.line = *line;
+            found.end = text_line.end;
         }
     }
     if (!found.ok)
         return (UnitKeyLine){0};
-    // insert_at is the end of the block's last line: the new line goes after its line break.
+    // insert_at is the end of the unit's last line: the new line goes after its line break.
     const char* stop = text + size;
     found.crlf = found.insert_at > text && found.insert_at[-1] == '\r';
     if (found.insert_at < stop)
         ++found.insert_at; // past the '\n'
     else
         found.insert_newline_first = true;
-    if (!found.indent) // a block with no keys yet: one level deeper than its header
-        found.indent = block == DEFS_BLOCK_UNIT ? 4 : unit_indent + 4;
+    if (!found.indent) // a unit with no keys yet
+        found.indent = 4;
     return found;
 }
 
-u32 defs_unit_get(const char* text, umm size, const char* unit, u32 block, const char* key, f64 values[DEFS_UNIT_MAX_VALUES])
+u32 defs_unit_get(const char* text, umm size, const char* unit, const char* key, f64* value)
 {
-    UnitKeyLine found = find_unit_key(text, size, unit, block, key);
+    UnitKeyLine found = find_unit_key(text, size, unit, key);
     if (!found.ok || !found.given)
         return 0;
-    u32 count = field_values(found.field);
-    NV_ASSERT(count <= DEFS_UNIT_MAX_VALUES);
-    for (u32 i = 0; i < count; ++i) {
-        NvTextNumber number = nv_text_parse_number(NULL, 0, found.line.tokens[1 + i], false);
-        if (!number.ok)
-            return 0;
-        values[i] = number.value;
-    }
-    return count;
+    NvTextNumber number = nv_text_parse_number(NULL, 0, found.line.tokens[1], false);
+    if (!number.ok)
+        return 0;
+    *value = number.value;
+    return 1;
 }
 
-umm defs_unit_set(const char* text, umm size, const char* unit, u32 block, const char* key, const f64* values, u32 count,
-                  char* out, umm capacity)
+umm defs_unit_set(const char* text, umm size, const char* unit, const char* key, f64 value, char* out, umm capacity)
 {
-    UnitKeyLine found = find_unit_key(text, size, unit, block, key);
-    if (!found.ok || count != field_values(found.field))
+    UnitKeyLine found = find_unit_key(text, size, unit, key);
+    if (!found.ok)
         return 0;
     if (found.given)
-        return replace_values(text, size, found.field, &found.line, found.end, values, count, out, capacity);
+        return replace_values(text, size, found.field, &found.line, found.end, &value, 1, out, capacity);
 
-    // A new line, "<indent><key> <values>", after the block's last key.
-    b32 integer = found.field->kind == FIELD_INTEGER;
+    // A new line, "<indent><key> <value>", after the unit's last key.
+    b32 integer = found.field->kind == FIELD_INTEGER || found.field->kind == FIELD_WHOLE;
     char written[160];
     umm used = 0;
     const char* newline = found.crlf ? "\r\n" : "\n";
@@ -1034,14 +1168,11 @@ umm defs_unit_set(const char* text, umm size, const char* unit, u32 block, const
         return 0;
     memset(written + used, ' ', found.indent);
     used += found.indent;
-    used += (umm)snprintf(written + used, sizeof(written) - used, "%s", key);
-    for (u32 i = 0; i < count; ++i) {
-        written[used++] = ' ';
-        u32 length = format_value(written + used, sizeof(written) - used, values[i], integer);
-        if (!length)
-            return 0;
-        used += length;
-    }
+    used += (umm)snprintf(written + used, sizeof(written) - used, "%s ", key);
+    u32 length = format_value(written + used, sizeof(written) - used, value, integer);
+    if (!length)
+        return 0;
+    used += length;
     if (!found.insert_newline_first) {
         if (used + 2 >= sizeof(written))
             return 0;

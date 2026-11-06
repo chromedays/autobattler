@@ -1,13 +1,13 @@
 # 유닛 실험실 스펙 (Unit Lab)
 
-상태: 구현됨 (2026-11-05). Windows 빌드와 그 스크립트 검사는 아직 하지 않았다("단계" 4).
+상태: 구현됨 (2026-11-05). Windows 빌드와 그 스크립트 검사는 아직 하지 않았다("단계" 4). 유닛 값의 키가 위키 `unit_stats.csv`의 열이 되었다(2026-11-06, `unit_fields.md`).
 
 ### 목표
 
 유닛 **하나**가 어떻게 움직이고 싸우는지 가까이에서 보고, 그 자리에서 값을 고쳐 다시 보는 씬이다. 전투(`battle.md`)는 군대끼리의
 결과를 보여 주지만, 유닛 하나의 사거리, 조준, 명중, 처치 시간을 읽기는 어렵다. 실험실은 그것을 숫자로 보여 준다.
 
-- 고른 유닛 정의의 유닛 하나를 세운다. 분대(`squad` > 1)여도 분대의 유닛 **한 기**만 세운다.
+- 고른 유닛 정의의 유닛 하나를 세운다. 분대(`squad_size` > 1)여도 분대의 유닛 **한 기**만 세운다.
 - 그 앞에 **임시 표적** 둘을 세운다: 지상 표적과 공중 표적. 유닛이 칠 수 있는 레이어와 상관없이 언제나 둘 다 있다(칠 수 없는 표적은
   노리지 않고, 포탄은 그 표적을 지나간다는 것도 눈으로 본다).
 - 유닛은 **전투와 같은 규칙**(`src/battle.c`)으로 움직인다. 실험실 전용 시뮬레이션은 없다. 실험실에서 본 것이 전투에서 일어나는
@@ -78,11 +78,11 @@
 
 | 바꾼 것 | 지금 실험에서 |
 |---|---|
-| 체력의 최대(유닛의 `health`, Target health) | 살아 있는 것은 지금 체력을 그대로 두되 새 최대를 넘지 않게 자른다. 다시 생기는 표적은 새 값으로 찬다 |
-| 실드의 `capacity` | 지금 에너지를 새 용량에서 자른다 |
-| Distance, Move width, Air altitude, 표적과 유닛의 `radius`, `height`, `altitude` | 표적의 처음 자리가 새 자리로 옮겨지고 살아 있는 표적은 그 자리로 간다(오가기는 처음 자리에서 +X로 다시). 유닛은 제자리에 있고 공중이면 새 고도로 간다 |
+| 체력의 최대(유닛의 `hp`, Target health) | 살아 있는 것은 지금 체력을 그대로 두되 새 최대를 넘지 않게 자른다. 다시 생기는 표적은 새 값으로 찬다 |
+| 유닛의 `shield_hp` | 남은 실드를 새 값에서 자른다 |
+| Distance, Move width, Air altitude, 표적과 유닛의 `radius_m`, `height_m`, `altitude_m` | 표적의 처음 자리가 새 자리로 옮겨지고 살아 있는 표적은 그 자리로 간다(오가기는 처음 자리에서 +X로 다시). 유닛은 제자리에 있고 공중이면 새 고도로 간다 |
 | Walk into range | 유닛의 `UNIT_HOLD`를 켜거나 끈다 |
-| 그 밖(무기, 속도, 방어력, 규칙, Move speed, Respawn delay) | 다음 틱부터 새 값으로 돈다. 날고 있는 포탄은 쏠 때의 값 그대로다 |
+| 그 밖(공격의 값, 속도, 방어력, 규칙, Move speed, Respawn delay) | 다음 틱부터 새 값으로 돈다. 날고 있는 포탄은 쏠 때의 값 그대로다 |
 
 **되감기를 위한 기록:** 바로 건 바꾸기는 그 틱과 바꾼 뒤의 실험실 정의 사본과 설정을 기록에 남긴다(`Lab.changes`, 최대 4096개: 위젯을 끌면 프레임마다 하나가 생기므로, 1분 넘게 끌어야 찬다). `lab_seek`는
 처음부터 다시 돌리면서 기록된 틱마다 같은 바꾸기를 같은 방식으로 건다. 그래서 바꾸기가 섞인 실험도 되감기가 정확하다. 기록이 차면
@@ -126,7 +126,7 @@
 
 | 값 | 뜻 |
 |---|---|
-| Shots | 발사 수(`BATTLE_EVENT_FIRE`). 쏜 순간 유닛의 대상이 그 표적이면 그 표적의 것 |
+| Shots | 공격 수: 발사(`BATTLE_EVENT_FIRE`)와 근접 타격(`BATTLE_EVENT_STRIKE`). 공격한 순간 유닛의 대상이 그 표적이면 그 표적의 것. 근접 타격 하나는 `hits_or_shots_per_attack`번의 명중이 된다 |
 | Hits | 그 표적에 맞은 수(`BATTLE_EVENT_HIT`, 이벤트의 `def`로 표적을 안다) |
 | Misses | 합계만: 발사 − 명중 − 날고 있는 포탄 |
 | Damage | 그 표적에 준 피해(방어력을 뺀 뒤, 이벤트의 `size`)의 합 |
@@ -135,8 +135,9 @@
 | DPS | 피해 합 ÷ 유닛에게 대상이 있던 시간(표적이 다시 생기기를 기다린 시간은 빠진다) |
 
 **기대값**(정의에서 계산; 시뮬레이션과 비교하는 기준): 한 발 피해 `max(damage − armor, damage × min_damage_fraction)`, 처치에 필요한
-발 수 `ceil(health ÷ 한 발 피해)`, 기대 DPS `한 발 피해 ÷ 쿨다운`(쿨다운은 틱으로 올린 값 ÷ 30), 기대 처치 시간 `(발 수 − 1) × 쿨다운 +
-비행 시간`(비행 시간은 걸어가면 멈추는 거리에서, 서 있으면 그 자리에서 쏜 마지막 포탄의 것). Expected 표의 행은 Per hit, Shots to kill,
+발 수 `ceil(ceil(hp ÷ 한 발 피해) ÷ 공격당 명중)`(공격당 명중은 근접이면 `hits_or_shots_per_attack`, 과도기의 포탄은 1), 기대 DPS
+`한 발 피해 × 공격당 명중 ÷ 공격 간격`(간격은 틱으로 올린 값 ÷ 30), 기대 처치 시간 `(발 수 − 1) × 공격 간격 + 비행 시간`(비행 시간은
+걸어가면 멈추는 거리에서, 서 있으면 그 자리에서 쏜 마지막 포탄의 것으로, 몸 가운데에서 `BATTLE_INTERIM_LAUNCH_ANGLE`로 쏜다. 근접은 0). Expected 표의 행은 Per hit, Shots to kill,
 Kill time (s), DPS다.
 
 Reset results 버튼은 측정값만 지운다(실험은 그대로 이어진다).
@@ -145,18 +146,25 @@ Reset results 버튼은 측정값만 지운다(실험은 그대로 이어진다)
 
 패널의 Unit 절. Rules 절(`abproj.md`의 "규칙 고치기")과 같은 방식으로 **프로젝트의 글을 제자리에서** 고친다.
 
-- **고칠 수 있는 키(수만):** 유닛의 `cost`, `squad`, `footprint`, `health`, `armor`, `speed`, `radius`, `height`, `altitude`(공중 유닛만),
-  무기의 `range`, `damage`, `cooldown`, `launch_angle`, `spread`, `muzzle`(셋), 실드의 `radius`, `capacity`, `regen`, `regen_delay`.
-  위젯은 파일의 단위로 보인다(각도는 도, 시간은 초). 실험이 읽지 않는 `cost`, `squad`, `footprint`(배치의 값)는 맨 아래 "Battle only"
-  제목 아래에 둔다(키 표의 `battle_only`).
-- **이번에 고치지 않는 것:** 이름, `layer`, `targets`, `roles`(낱말과 이름), 무기나 능력 블록을 더하거나 빼기. "나중에" 절.
-- **글이 원본이다.** `defs_unit_get(text, size, unit, block, key, values)`가 값을 읽고 `defs_unit_set(...)`이 그 키의 줄에서 값만 바꾼
-  글을 만든다. `block`은 유닛, 무기, 능력 중 하나다. 값의 쓰기, 들여쓰기, 주석 열은 `defs_rule_set`과 같다(같은 도우미를 쓴다).
-- **없는 선택 키:** 파일에 없는 선택 키(`armor`, `spread`, `muzzle` 등)는 위젯이 기본값을 보이고, 고치면 그 블록의 마지막 줄 뒤에 블록의
+- **고칠 수 있는 키(수와 정수만, `unit_fields.md`의 "키"):** `cost`, `squad_size`, `footprint_w`, `footprint_d`, `radius_m`, `height_m`,
+  `altitude_m`, `hp`, `armor`, `shield_hp`, `move_speed`, `range`, `damage`, `attack_interval`, `hits_or_shots_per_attack`, `splash_radius`,
+  그리고 투사체의 `initial_speed_mps`, `forward_acceleration_mps2`, `max_speed_mps`, `lifetime_s`, `max_travel_m`, `collision_radius_m`,
+  `gravity_scale`, `turn_rate_deg_s`, `guidance_delay_s`, `aim_point_scatter_m`, `launch_spread_deg`, `piercing_count`, `arc_height_m`.
+  위젯은 그 유닛에 맞는 키만 보인다(키 표의 `shown`): `altitude_m`은 공중 유닛, 투사체 키는 `Melee`가 아닌 유닛, `turn_rate_deg_s`와
+  `guidance_delay_s`는 `GuidedProjectile`, `arc_height_m`은 `ScriptedArc`. 위젯은 파일의 단위로 보인다(각도는 도, 시간은 초). 파일이 정수로
+  쓰는 키(`hp`, `armor`, `shield_hp`, `damage` 등)는 정수 위젯이다. 실험이 읽지 않는 `cost`, `squad_size`, `footprint_w`, `footprint_d`(배치의
+  값)는 맨 아래 "Battle only" 제목 아래에 둔다(키 표의 `battle_only`). 라운드가 아직 따르지 않는 키(`unit_fields.md`의 "과도기")도 고치고
+  저장할 수 있지만 실험은 바뀌지 않는다.
+- **이번에 고치지 않는 것:** `name`, 낱말 키(`unit_layer`, `target_layer`, `attack_type`, `trajectory_mode` 등), 불리언, `roles`, 새 유닛 만들기.
+  "나중에" 절.
+- **글이 원본이다.** `defs_unit_get(text, size, unit, key, &value)`가 값을 읽고 `defs_unit_set(text, size, unit, key, value, out, capacity)`이
+  그 키의 줄에서 값만 바꾼 글을 만든다. `unit`은 `unit_id`다. 블록이 하나뿐이라(`unit_fields.md`의 "결정" 3) 블록을 가리키는 인자는 없다.
+  값의 쓰기, 들여쓰기, 주석 열은 `defs_rule_set`과 같다(같은 도우미를 쓴다).
+- **없는 선택 키:** 파일에 없는 선택 키(`shield_hp`, `max_speed_mps` 등)는 위젯이 기본값을 보이고, 고치면 유닛의 마지막 키 줄 뒤에 그
   들여쓰기로 새 줄 하나를 더한다(주석 없음).
 - **읽기가 판단한다:** 새 글 전체를 `defs_read_project`로 읽는다. 좋으면 `game_set_unit_value`가 그것을 놓고(defs와 글, "(changed)" 표시,
   전투의 배치는 규칙 고치기와 같이 남기거나 뺀다), 실험실은 새 값을 받는다("바꾸기와 다시 시작" 절). 나쁘면 아무것도 바꾸지 않고 "Not
-  changed: <첫 오류>"를 빨강으로 보인다. 예: `squad`를 늘려 분대의 유닛이 겹침, `footprint`가 구역보다 큼.
+  changed: <첫 오류>"를 빨강으로 보인다. 예: `squad_size`를 늘려 분대의 유닛이 겹침, `footprint_d`가 구역보다 큼.
 - **언제:** 실험실에 있는 동안 언제나(전투가 배치 단계이므로). 로컬 파일을 읽거나 쓰는 중에는 꺼진다(규칙 고치기와 같다). Rules 절도
   실험실에서 그대로 쓸 수 있고, 바꾸면 유닛 값처럼 실험실이 받는다.
 - 저장은 프로젝트 줄의 Save, Save as...다. 실행 취소는 없다.
@@ -237,10 +245,10 @@ Windows의 스크립트(`engine/debug_script.h`)가 받는 인수는 정수와 �
   height, 10 Air altitude, 11 Respawn delay, 12 Restart on change, 13 View 절이 감출 것(`LAB_SHOW_*`의 마스크 × 100; 실험의 바꾸기가 아니다).
 - `_battle_debug_lab_action(action)`: 0 Restart, 1 Reset results.
 - `_battle_debug_lab_run(ticks)`: 실험을 그만큼 바로 돌린다(뷰의 이펙트와 함께).
-- `_battle_debug_set_unit_value(index, value)`: Unit 절처럼 유닛 값 하나를 고친다. `index`는 키 표의 순서(0 `cost`, 1 `squad`, 2
-  `footprint`, 3 `health`, 4 `armor`, 5 `speed`, 6 `radius`, 7 `height`, 8 `altitude`, 9 `range`, 10 `damage`, 11 `cooldown`, 12
-  `launch_angle`, 13 `spread`, 14 `muzzle`(받지 않는다), 15–18 실드의 `radius`, `capacity`, `regen`, `regen_delay`), `value`는 백분의 일.
-  고쳐졌으면 1.
+- `_battle_debug_set_unit_value(index, value)`: Unit 절처럼 유닛 값 하나를 고친다. `index`는 키 표(`lab_view.c`의 `unit_value_keys`)의
+  순서(0 `cost`, 1 `squad_size`, 2 `footprint_w`, 3 `footprint_d`, 4 `radius_m`, 5 `height_m`, 6 `altitude_m`, 7 `hp`, 8 `armor`, 9 `shield_hp`,
+  10 `move_speed`, 11 `range`, 12 `damage`, 13 `attack_interval`, 14 `hits_or_shots_per_attack`, 15 `splash_radius`, 16부터 투사체 키), `value`는
+  백분의 일. 고쳐졌으면 1.
 - Windows에서는 여섯 모두 `src/main.c`의 `battle_debug_calls`에 한 행씩 있다(`lab`, `lab_enter`, `lab_set`, `lab_action`, `lab_run`,
   `set_unit_value`).
 
@@ -249,23 +257,25 @@ Windows의 스크립트(`engine/debug_script.h`)가 받는 인수는 정수와 �
 `tests/battle_test.c`(테스트 안의 텍스트로만; 저장소 파일의 값은 확인하지 않는다):
 
 - **전투가 그대로:** `battle.c`에 더한 것을 쓰지 않는 라운드의 황금 해시(시드 1–4)가 바뀌지 않는다.
-- **분대 중 한 기:** `squad 6`인 유닛도 실험실에는 유닛 하나와 표적 둘, 모두 셋이다.
-- **제자리(Walk 끔):** 사거리 안의 멈춘 표적에 쿨다운마다 한 발씩 쏘고 모두 맞힌다(퍼짐 0). 처치 시간과 발 수가 기대값과 같다. 사거리
+- **분대 중 한 기:** `squad_size 6`인 유닛도 실험실에는 유닛 하나와 표적 둘, 모두 셋이다.
+- **제자리(Walk 끔):** 사거리 안의 멈춘 표적에 공격 간격마다 한 발씩 쏘고 모두 맞힌다(퍼짐 0). 처치 시간과 발 수가 기대값과 같다. 사거리
   밖이면 쏘지 않고 움직이지 않는다.
 - **걸어가기(Walk 켬):** 사거리 밖의 표적으로 걸어가 사거리 × `stop_fraction`에서 멈춘다.
 - **레이어:** 지상만 치는 유닛은 공중 표적을 노리지 않고, 공중 표적과 겹치는 길의 포탄이 그것을 지나간다(공중 표적의 명중 0).
   두 레이어를 치는 유닛은 같은 거리의 두 표적 중 지상 표적을 먼저 노린다.
 - **움직이는 표적:** 곧게 움직이는 표적을 리드 조준으로 맞힌다. 표적이 폭 끝에서 방향을 바꾸고 전장 가장자리를 넘지 않는다.
 - **다시 생기기:** 죽은 표적이 `respawn_delay` 뒤에 처음 자리에서 체력이 찬 채 살아나고, 유닛이 다시 노린다. 지연 0은 다음 틱.
+- **근접:** 타격이 Shots로, 타격마다 `hits_or_shots_per_attack`번이 Hits로 세어진다. 포탄이 없고 빗나감이 0이다. 처치 시간과 발 수가 기대값과 같다.
 - **끝이 없음:** `round_time`이 지나도, 표적이 모두 죽어도 실험이 이어진다.
 - **결정론과 되감기:** 같은 정의와 설정은 같은 해시. `lab_seek`로 어느 틱으로 돌아가도 그 틱에 기록한 해시와 측정값이 같다.
 - **바로 걸기(Restart on change 끔):** 실험 중에 바꿔도 틱과 측정값이 이어진다. 표의 행마다: 최대 체력을 줄이면 지금 체력이 잘리고
-  다시 생기는 표적은 새 값, 실드 용량, 거리를 바꾸면 표적이 새 자리로, Walk를 끄면 그 틱부터 멈춘다, 무기 값은 다음 발사부터.
+  다시 생기는 표적은 새 값, `shield_hp`, 거리를 바꾸면 표적이 새 자리로, Walk를 끄면 그 틱부터 멈춘다, 공격의 값은 다음 발사부터.
   바꾸기가 섞인 실험도 `lab_seek`가 그 틱의 해시와 측정값을 되살린다. 되감은 뒤에 바꾸면 그 뒤의 기록이 버려진다. 기록이 차면
   `lab_seek`가 거절한다.
 - **다시 시작(Restart on change 켬):** 바꾸면 틱 0, 측정값과 기록이 빈다. 다른 유닛 고르기와 Restart는 끔이어도 다시 시작한다.
-- **유닛 값 고치기:** 모든 키를 자기 값으로 다시 쓰면 바이트가 같다, 무기와 능력 블록의 키, 같은 키 이름(`radius`)이 유닛과 실드에 따로,
-  `muzzle` 세 값, 없는 선택 키를 더하는 줄(들여쓰기, CRLF), 모르는 유닛, 키, 블록, 값 개수는 거절, 범위 밖 값은 쓰고 읽기가 거절한다.
+- **유닛 값 고치기:** 모든 수 키를 자기 값으로 다시 쓰면 바이트가 같다, 다른 유닛의 같은 키는 그대로, 정수 키는 정수로, 각도는 도로, 없는
+  선택 키를 더하는 줄(빈 줄 앞, 들여쓰기, CRLF), 모르는 유닛과 키, 수가 아닌 키(`name`, 낱말, 불리언)는 거절, 범위 밖 값과 근접 유닛의
+  투사체 키는 쓰고 읽기가 거절한다.
 
 Playwright(Release, Debug, 데스크톱과 폰 크기; 손으로 돌리는 검사이고 스크립트는 저장소에 없다): 실험실에 들어가고(Release는 패널의
 Unit Lab 버튼을 눌러) 틱이 실시간으로 간다; 발사와 명중이 늘고 지상 표적이 죽었다가 다시 생기며, Crawler는 공중 표적을 노리지도
@@ -290,9 +300,10 @@ Unit Lab 버튼을 눌러) 틱이 실시간으로 간다; 발사와 명중이 �
 
 ### 나중에 (이 스펙 밖)
 
-- **위키의 유닛(U01–U10):** 근접, 유도탄(`PredictiveInterception`), 범위 피해, 곡사(`ScriptedArc`), `target_leading` 끄기가 형식에
-  들어오면 실험실에 그 조건과 측정값(범위 피해에 맞은 수, 유도탄의 선회)을 더한다.
-- **낱말 값 고치기:** `layer`(공중으로 바꾸면 `altitude`가 같이 필요하다), `targets`, `roles`, 능력 더하기와 빼기, 새 유닛 만들기.
+- **위키의 유닛(U01–U10):** 유도탄(`PredictiveInterception`), 범위 피해, 곡사(`ScriptedArc`), `target_leading` 끄기를 라운드가 따르게
+  되면(`unit_fields.md`의 "과도기") 실험실에 그 조건과 측정값(범위 피해에 맞은 수, 유도탄의 선회)을 더한다.
+- **낱말 값 고치기:** `unit_layer`(공중으로 바꾸면 `altitude_m`이 같이 필요하다), `target_layer`, `attack_type`(투사체 키가 같이 필요하다),
+  불리언, `roles`, 새 유닛 만들기.
 - **표적 하나씩 켜고 끄기**, 표적마다 다른 체력과 크기, 표적 여럿(범위 피해 시험).
 - **긴 사거리:** 사거리가 전장보다 긴 유닛(위키의 U10은 130 m)을 위해 실험실의 전장 크기를 거리에 맞춘다.
 - **분대 전체 실험:** 분대의 유닛들이 서로 밀어내며 싸우는 모습.

@@ -27,7 +27,7 @@ LabSettings lab_default_settings(const BattleDefs* project, u32 unit_def)
     LabSettings settings = {0};
     settings.unit_def = unit_def;
     settings.walk = true;
-    settings.distance = fminf(project->units[unit_def].weapon.range * 1.5f, lab_max_distance(&project->rules));
+    settings.distance = fminf(project->units[unit_def].range * 1.5f, lab_max_distance(&project->rules));
     settings.move_speed = 4.0f;
     settings.move_width = 16.0f;
     settings.target_health = 300.0f;
@@ -41,11 +41,13 @@ LabSettings lab_default_settings(const BattleDefs* project, u32 unit_def)
 internal void set_target_def(UnitDef* def, const LabSettings* settings, UnitLayer layer)
 {
     *def = (UnitDef){0};
+    snprintf(def->id, sizeof(def->id), "%s", layer == UNIT_LAYER_AIR ? "air_target" : "ground_target");
     snprintf(def->name, sizeof(def->name), "%s", layer == UNIT_LAYER_AIR ? "Air target" : "Ground target");
     def->cost = 1;
     def->squad_size = 1;
-    def->footprint = 1;
-    def->health = settings->target_health;
+    def->footprint_w = 1;
+    def->footprint_d = 1;
+    def->hp = settings->target_health;
     def->armor = settings->target_armor;
     def->radius = settings->target_radius;
     def->height = settings->target_height;
@@ -78,7 +80,7 @@ internal void bring_back_target(Lab* lab, u32 target)
 {
     Unit* unit = &lab->battle.units[LAB_SLOT_GROUND + target];
     unit->flags &= ~(u32)UNIT_DEAD;
-    unit->health = lab->defs.units[LAB_DEF_GROUND + target].health;
+    unit->health = lab->defs.units[LAB_DEF_GROUND + target].hp;
     unit->damage_taken = 0.0f;
     unit->position = unit->previous_position = lab->homes[target];
     unit->velocity = nv_vec3(0.0f, 0.0f, 0.0f);
@@ -127,7 +129,7 @@ void lab_start(Lab* lab, const BattleDefs* project, const LabSettings* settings)
 }
 
 // A change goes into the run as it stands (docs/specs/unit_lab.md, "Changes and restarting"): what is alive keeps its health
-// up to the new maximum, a shield its energy up to the new capacity, and the targets go to new homes when theirs moved.
+// up to the new hp, a shield what it has left up to the new shield_hp, and the targets go to new homes when theirs moved.
 internal void apply_change(Lab* lab, const LabChange* change)
 {
     if (change->reset_results) {
@@ -144,9 +146,8 @@ internal void apply_change(Lab* lab, const LabChange* change)
     for (u32 slot = LAB_SLOT_UNIT; slot <= LAB_SLOT_AIR; ++slot) {
         Unit* unit = &battle->units[slot];
         const UnitDef* def = &lab->defs.units[unit->def];
-        unit->health = fminf(unit->health, def->health);
-        if (def->ability.kind == ABILITY_SHIELD)
-            unit->ability.shield.energy = fminf(unit->ability.shield.energy, def->ability.shield.capacity);
+        unit->health = fminf(unit->health, def->hp);
+        unit->shield = fminf(unit->shield, def->shield_hp);
     }
     Unit* unit = &battle->units[LAB_SLOT_UNIT];
     unit->flags = (unit->flags & ~(u32)UNIT_HOLD) | (lab->settings.walk ? 0u : (u32)UNIT_HOLD);
@@ -228,8 +229,8 @@ internal void steer_targets(Lab* lab)
     }
 }
 
-// The results from the events battle_tick just added: shots go to the unit's target as it fired, hits and deaths to the
-// target they are about (its def).
+// The results from the events battle_tick just added: shots (shells fired and melee strikes) go to the unit's target as it
+// attacked, hits and deaths to the target they are about (its def).
 internal void measure(Lab* lab, u32 first_event)
 {
     Battle* battle = &lab->battle;
@@ -239,6 +240,7 @@ internal void measure(Lab* lab, u32 first_event)
         const BattleEvent* event = &battle->events[i];
         switch (event->kind) {
         case BATTLE_EVENT_FIRE:
+        case BATTLE_EVENT_STRIKE:
             if (event->team != TEAM_PLAYER)
                 break;
             ++results->shots;
@@ -314,28 +316,35 @@ LabExpected lab_expected(const Lab* lab, u32 target)
     NV_ASSERT(target < LAB_TARGET_COUNT);
     const UnitDef* unit = &lab->defs.units[LAB_DEF_UNIT];
     const UnitDef* target_def = &lab->defs.units[LAB_DEF_GROUND + target];
-    const WeaponDef* weapon = &unit->weapon;
     const BattleRules* rules = &lab->defs.rules;
     LabExpected expected = {0};
-    if (!(weapon->targets & (1u << target_def->layer)))
+    if (!(unit->targets & (1u << target_def->layer)))
         return expected;
     expected.ok = true;
-    expected.damage_per_hit = fmaxf(weapon->damage - target_def->armor, weapon->damage * rules->min_damage_fraction);
-    f32 cooldown = (f32)battle_seconds_to_ticks(weapon->cooldown) * BATTLE_TICK_SECONDS;
-    expected.dps = expected.damage_per_hit / cooldown;
+    expected.damage_per_hit = fmaxf(unit->damage - target_def->armor, unit->damage * rules->min_damage_fraction);
+    // A melee attack hits hits_per_attack times; the interim shell is one shot (unit_fields.md, "Interim").
+    f32 hits = unit->attack_type == ATTACK_MELEE ? (f32)unit->hits_per_attack : 1.0f;
+    f32 interval = (f32)battle_seconds_to_ticks(unit->attack_interval) * BATTLE_TICK_SECONDS;
+    expected.dps = expected.damage_per_hit * hits / interval;
     if (expected.damage_per_hit <= 0.0f)
         return expected;
-    expected.shots_to_kill = (u32)ceilf(target_def->health / expected.damage_per_hit - 0.0001f);
+    u32 hits_to_kill = (u32)ceilf(target_def->hp / expected.damage_per_hit - 0.0001f);
+    u32 per_attack = unit->attack_type == ATTACK_MELEE ? unit->hits_per_attack : 1;
+    expected.shots_to_kill = (hits_to_kill + per_attack - 1) / per_attack;
+    if (unit->attack_type == ATTACK_MELEE) {
+        expected.seconds_to_kill = (f32)(expected.shots_to_kill - 1) * interval;
+        return expected;
+    }
     // The last shell flies from where the unit fires: its stop distance when it walks, its home when it holds.
     NvVec3 home = unit_home(rules);
     f32 dx = lab->homes[target].x - home.x, dz = lab->homes[target].z - home.z;
     f32 distance = sqrtf(dx * dx + dz * dz);
     if (lab->settings.walk)
-        distance = fminf(distance, weapon->range * rules->stop_fraction);
-    f32 muzzle_height = (unit->layer == UNIT_LAYER_AIR ? unit->altitude : 0.0f) + weapon->muzzle.y;
+        distance = fminf(distance, unit->range * rules->stop_fraction);
+    f32 muzzle_height = (unit->layer == UNIT_LAYER_AIR ? unit->altitude : 0.0f) + unit->height * 0.5f;
     f32 aim_height = target_def->layer == UNIT_LAYER_AIR ? target_def->altitude + target_def->height * 0.5f : 0.0f;
-    f32 rise = distance * tanf(weapon->launch_angle) - (aim_height - muzzle_height);
+    f32 rise = distance * tanf(BATTLE_INTERIM_LAUNCH_ANGLE) - (aim_height - muzzle_height);
     f32 flight = rise > 0.0f ? sqrtf(2.0f * rise / rules->gravity) : 0.0f;
-    expected.seconds_to_kill = (f32)(expected.shots_to_kill - 1) * cooldown + flight;
+    expected.seconds_to_kill = (f32)(expected.shots_to_kill - 1) * interval + flight;
     return expected;
 }

@@ -73,6 +73,18 @@ internal NvVfxEffectId make_muzzle(NvVfx* vfx)
     return nv_vfx_add_effect(vfx, &effect);
 }
 
+// A short white slash on the target of a melee strike, along the strike's way.
+internal NvVfxEffectId make_strike(NvVfx* vfx)
+{
+    NvVfxEffectDesc effect = {.name = "Strike", .emitter_count = 1};
+    effect.emitters[0] = (NvVfxEmitterDesc){
+        .count = 8, .life_min = 0.08f, .life_max = 0.18f, .speed_min = 3.0f, .speed_max = 6.0f, .cone = 0.4f,
+        .drag = 0.9f, .size_start = 0.06f, .size_end = 0.02f, .stretch = 0.4f,
+        .colors = {RGBA(6.0f, 6.0f, 6.0f, 1.0f), RGBA(2.0f, 2.0f, 2.0f, 0.6f), RGBA(0.5f, 0.5f, 0.5f, 0.0f)},
+        .shape = NV_VFX_SHAPE_STREAK, .blend = NV_VFX_BLEND_ADD};
+    return nv_vfx_add_effect(vfx, &effect);
+}
+
 internal void make_effects(Game* game)
 {
     Effects* effects = &game->effects;
@@ -80,6 +92,7 @@ internal void make_effects(Game* game)
     effects->explosion = make_explosion(&game->vfx);
     effects->shield_hit = make_shield_hit(&game->vfx);
     effects->muzzle = make_muzzle(&game->vfx);
+    effects->strike = make_strike(&game->vfx);
     effects->trail = (NvVfxLineStyle){
         .life = 0.35f, .width_start = 0.12f, .width_end = 0.0f,
         .colors = {RGBA(4.0f, 2.4f, 0.8f, 0.9f), RGBA(0.6f, 0.2f, 0.05f, 0.0f)}};
@@ -100,6 +113,9 @@ void view_on_tick(Game* game)
         switch (event->kind) {
         case BATTLE_EVENT_FIRE:
             nv_vfx_burst(vfx, effects->muzzle, event->position, event->direction, 1.0f);
+            break;
+        case BATTLE_EVENT_STRIKE:
+            nv_vfx_burst(vfx, effects->strike, event->position, event->direction, 1.0f);
             break;
         case BATTLE_EVENT_HIT:
             nv_vfx_burst(vfx, effects->explosion, event->position, nv_vec3(0.0f, 1.0f, 0.0f), 0.5f);
@@ -316,13 +332,14 @@ internal DeployTarget deploy_target(const Game* game, ZonePoint point)
     BattleCell squad = battle_squad_at(battle, (s32)point.x, (s32)point.row);
     if (squad.ok) {
         u32 def = battle->placed[squad.row][squad.x] - 1u;
-        return (DeployTarget){.remove = true, .x = squad.x, .row = squad.row, .size = game->defs.units[def].footprint};
+        const UnitDef* placed = &game->defs.units[def];
+        return (DeployTarget){.remove = true, .x = squad.x, .row = squad.row, .w = placed->footprint_w, .d = placed->footprint_d};
     }
-    u32 size = game->defs.units[game->selected_def].footprint;
-    f32 half = (f32)size * 0.5f;
-    f32 x = nv_clamp_f32(floorf(point.x - half + 0.5f), 0.0f, (f32)rules->grid_width - (f32)size);
-    f32 row = nv_clamp_f32(floorf(point.row - half + 0.5f), 0.0f, (f32)rules->zone_rows - (f32)size);
-    return (DeployTarget){.x = (s32)x, .row = (s32)row, .size = size};
+    const UnitDef* chosen = &game->defs.units[game->selected_def];
+    u32 w = chosen->footprint_w, d = chosen->footprint_d;
+    f32 x = nv_clamp_f32(floorf(point.x - (f32)w * 0.5f + 0.5f), 0.0f, (f32)rules->grid_width - (f32)w);
+    f32 row = nv_clamp_f32(floorf(point.row - (f32)d * 0.5f + 0.5f), 0.0f, (f32)rules->zone_rows - (f32)d);
+    return (DeployTarget){.x = (s32)x, .row = (s32)row, .w = w, .d = d};
 }
 
 // A left drag or one finger moves the view over the ground; a right or middle drag or two fingers turn it; the wheel and
@@ -476,7 +493,7 @@ void view_update(Game* game, f32 game_dt)
         node->mesh = !alive ? (NvMeshId){0} : lab ? game->lab_meshes[unit->def] : game->unit_meshes[unit->def];
         node->material = game->team_materials[unit->team];
         if (unit->flags & UNIT_DUMMY) { // a lab target: grey, darker when the unit cannot hit its layer
-            b32 reachable = battle->defs->units[LAB_DEF_UNIT].weapon.targets & (1u << def->layer);
+            b32 reachable = battle->defs->units[LAB_DEF_UNIT].targets & (1u << def->layer);
             node->material = reachable ? game->target_material : game->target_out_of_reach_material;
         }
         NvVec3 position = nv_vec3(lerp(unit->previous_position.x, unit->position.x, alpha), unit->position.y,
@@ -489,12 +506,13 @@ void view_update(Game* game, f32 game_dt)
         if (!alive)
             continue;
         if (battle->phase != BATTLE_DEPLOY) {
-            draw_health_bar(renderer, nv_vec3_add(position, nv_vec3(0.0f, def->height + 0.4f, 0.0f)), screen_right, unit->health / def->health);
-            if (def->ability.kind == ABILITY_SHIELD && unit->ability.shield.energy > 0.0f) {
-                f32 share = unit->ability.shield.energy / def->ability.shield.capacity;
+            draw_health_bar(renderer, nv_vec3_add(position, nv_vec3(0.0f, def->height + 0.4f, 0.0f)), screen_right, unit->health / def->hp);
+            if (def->shield_hp > 0.0f && unit->shield > 0.0f) {
+                // The shield is the unit's own: three rings around its body, brighter the more is left.
+                f32 share = unit->shield / def->shield_hp;
                 NvVec3 color = nv_vec3_scale(nv_vec3(0.3f, 0.8f, 1.0f), 0.3f + 0.7f * share);
                 NvVec3 center = nv_vec3_add(position, nv_vec3(0.0f, def->height * 0.5f, 0.0f));
-                f32 radius = def->ability.shield.radius;
+                f32 radius = fmaxf(def->radius, def->height * 0.5f) * 1.25f;
                 view_draw_ring(renderer, center, nv_vec3(1, 0, 0), nv_vec3(0, 0, 1), radius, color);
                 view_draw_ring(renderer, center, nv_vec3(1, 0, 0), nv_vec3(0, 1, 0), radius, color);
                 view_draw_ring(renderer, center, nv_vec3(0, 1, 0), nv_vec3(0, 0, 1), radius, color);
@@ -526,17 +544,17 @@ void view_update(Game* game, f32 game_dt)
         if (game->hover_shown) {
             // The footprint a tap would fill (or empty, on a placed squad): green when it can, red when it cannot.
             NvVec3 color = game->hover_ok ? nv_vec3(0.2f, 1.0f, 0.3f) : nv_vec3(1.0f, 0.2f, 0.2f);
-            u32 x = (u32)game->hover.x, row = (u32)game->hover.row, size = game->hover.size;
+            u32 x = (u32)game->hover.x, row = (u32)game->hover.row, w = game->hover.w, d = game->hover.d;
             for (u32 inset = 0; inset < 2; ++inset) {
                 f32 pad = 0.05f + 0.08f * (f32)inset;
                 NvVec3 a = nv_vec3_add(cell_corner(rules, x, row, 0.05f), nv_vec3(pad, 0.0f, pad));
-                NvVec3 b = nv_vec3_add(cell_corner(rules, x + size, row, 0.05f), nv_vec3(-pad, 0.0f, pad));
-                NvVec3 c = nv_vec3_add(cell_corner(rules, x + size, row + size, 0.05f), nv_vec3(-pad, 0.0f, -pad));
-                NvVec3 d = nv_vec3_add(cell_corner(rules, x, row + size, 0.05f), nv_vec3(pad, 0.0f, -pad));
+                NvVec3 b = nv_vec3_add(cell_corner(rules, x + w, row, 0.05f), nv_vec3(-pad, 0.0f, pad));
+                NvVec3 c = nv_vec3_add(cell_corner(rules, x + w, row + d, 0.05f), nv_vec3(-pad, 0.0f, -pad));
+                NvVec3 e = nv_vec3_add(cell_corner(rules, x, row + d, 0.05f), nv_vec3(pad, 0.0f, -pad));
                 nv_renderer_debug_line(renderer, a, b, color);
                 nv_renderer_debug_line(renderer, b, c, color);
-                nv_renderer_debug_line(renderer, c, d, color);
-                nv_renderer_debug_line(renderer, d, a, color);
+                nv_renderer_debug_line(renderer, c, e, color);
+                nv_renderer_debug_line(renderer, e, a, color);
             }
         }
     }
@@ -716,9 +734,9 @@ b32 view_unit_buttons(Game* game, u32* selected, b32 enabled, b32 deployment)
     // The chosen unit's layer, and the layers its weapon can hit.
     const UnitDef* def = &defs->units[*selected];
     char targets[32] = "";
-    if (def->weapon.targets & TARGET_GROUND)
+    if (def->targets & TARGET_GROUND)
         snprintf(targets, sizeof(targets), "%s", T("Ground"));
-    if (def->weapon.targets & TARGET_AIR) {
+    if (def->targets & TARGET_AIR) {
         umm used = strlen(targets);
         snprintf(targets + used, sizeof(targets) - used, "%s%s", used ? ", " : "", T("Air"));
     }

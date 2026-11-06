@@ -77,11 +77,11 @@ typedef struct Lab {
 
 // What the definitions say the unit should do to a target, for the panel to set beside the results.
 typedef struct LabExpected {
-    b32 ok;               // false when the unit's weapon cannot hit that target's layer
+    b32 ok;               // false when the unit cannot hit that target's layer
     f32 damage_per_hit;   // after armor
-    u32 shots_to_kill;
+    u32 shots_to_kill;    // attacks: shells, or melee strikes of hits_per_attack hits
     f32 dps;
-    f32 seconds_to_kill;  // the shots after the first, at the cooldown, and the last shell's flight
+    f32 seconds_to_kill;  // the attacks after the first, at the attack interval, and the last shell's flight
 } LabExpected;
 
 // The settings a lab starts with for unit def `unit_def` of a project.

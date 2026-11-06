@@ -1,48 +1,372 @@
-# autobattler/data/default.abproj: the auto-battler's rules, units and stage (docs/specs/abproj.md)
+# autobattler/data/default.abproj: the auto-battler's rules, units and stage (docs/specs/abproj.md). The units are the wiki's
+# unit_stats.csv (docs/specs/unit_fields.md): one line per cell of a row, none for an empty cell.
 abproj_version 1
 
 rules
     cell_size 2              # m
-    grid 32 48               # cells across, rows long
+    grid 32 68               # cells across, rows long (the wiki's D-17)
     zone_rows 14             # each side's deployment rows
-    round_time 60            # s
+    round_time 90            # s (the wiki's D-24)
     gravity 9.8              # m/s²
     retarget_interval 0.25   # s
-    stop_fraction 0.9        # of the weapon's range
+    stop_fraction 0.9        # of the range
     min_damage_fraction 0.25 # armor never takes more than 75% of a hit
 
-unit Crawler
-    cost 100           # the whole squad
-    squad 6            # units
-    footprint 2        # cells on a side
-    health 120
+roles
+    Chaff/Screen
+    Flanker
+    Anti-Air
+    Chaff Clear
+    Midline DPS
+    Tank/Anchor
+    Support(future)
+    Flanker/Diver
+    Carry
+    Control(future)
+    Anti-Tank
+    Siege
+
+unit U01
+    name Scout Swarm
+    cost 50
+    squad_size 24
+    roles Chaff/Screen, Flanker
+    unit_layer Ground
+    target_layer Ground
+    footprint_w 5
+    footprint_d 2
+    radius_m 0.5
+    height_m 0.8
+    hp 45
+    armor 0
+    move_speed 15
+    range 6
+    damage 7
+    attack_interval 0.7
+    hits_or_shots_per_attack 1
+    splash_radius 0
+    attack_type Melee
+
+unit U02
+    name Rifle Squad
+    cost 100
+    squad_size 12
+    roles Chaff/Screen, Anti-Air
+    unit_layer Ground
+    target_layer Both
+    target_priority Ground
+    footprint_w 4
+    footprint_d 2
+    radius_m 0.6
+    height_m 1.8
+    hp 80
+    armor 0
+    move_speed 7
+    range 60
+    damage 13
+    attack_interval 0.65
+    hits_or_shots_per_attack 1
+    splash_radius 0
+    attack_type UnguidedProjectile
+    initial_speed_mps 180
+    forward_acceleration_mps2 0
+    lifetime_s 1.0
+    max_travel_m 90
+    collision_radius_m 0.05
+    gravity_scale 0
+    aim_point_scatter_m 0
+    launch_spread_deg 0
+    piercing_count 0
+    interceptable false
+    trajectory_mode Straight
+    target_leading true
+
+unit U03
+    name Auto Cannon
+    cost 150
+    squad_size 2
+    roles Chaff Clear, Midline DPS
+    unit_layer Ground
+    target_layer Ground
+    footprint_w 4
+    footprint_d 2
+    radius_m 1.2
+    height_m 2.0
+    hp 450
     armor 5
-    speed 5            # m/s
-    radius 0.5
-    height 0.8
-    weapon Lobber
-        range 20
-        damage 30
-        cooldown 1.5
-        launch_angle 45    # degrees
-        spread 0.5
-        muzzle 0 0.6 0.3
-    ability shield
-        radius 1.2
-        capacity 60
-        regen 10           # per second
-        regen_delay 3
+    move_speed 7
+    range 50
+    damage 22
+    attack_interval 0.25
+    hits_or_shots_per_attack 2
+    splash_radius 2.5
+    attack_type UnguidedProjectile
+    initial_speed_mps 140
+    forward_acceleration_mps2 0
+    lifetime_s 1.0
+    max_travel_m 80
+    collision_radius_m 0.12
+    gravity_scale 0
+    aim_point_scatter_m 0
+    launch_spread_deg 0
+    piercing_count 0
+    interceptable false
+    trajectory_mode Straight
+    target_leading true
+
+unit U04
+    name Shield Guard
+    cost 150
+    squad_size 1
+    roles Tank/Anchor, Support(future)
+    unit_layer Ground
+    target_layer Ground
+    footprint_w 3
+    footprint_d 3
+    radius_m 2.0
+    height_m 3.5
+    hp 2000
+    armor 20
+    shield_hp 500
+    move_speed 5
+    range 12
+    damage 50
+    attack_interval 1.5
+    hits_or_shots_per_attack 1
+    splash_radius 0
+    attack_type UnguidedProjectile
+    initial_speed_mps 80
+    forward_acceleration_mps2 0
+    lifetime_s 0.5
+    max_travel_m 25
+    collision_radius_m 0.15
+    gravity_scale 0
+    aim_point_scatter_m 0
+    launch_spread_deg 0
+    piercing_count 0
+    interceptable false
+    trajectory_mode Straight
+    target_leading true
+
+unit U05
+    name Fast Raider
+    cost 175
+    squad_size 3
+    roles Flanker/Diver, Carry
+    unit_layer Ground
+    target_layer Ground
+    footprint_w 3
+    footprint_d 2
+    radius_m 0.9
+    height_m 1.2
+    hp 260
+    armor 0
+    move_speed 18
+    range 10
+    damage 75
+    attack_interval 0.7
+    hits_or_shots_per_attack 1
+    splash_radius 0
+    attack_type UnguidedProjectile
+    initial_speed_mps 140
+    forward_acceleration_mps2 0
+    lifetime_s 0.5
+    max_travel_m 40
+    collision_radius_m 0.1
+    gravity_scale 0
+    aim_point_scatter_m 0
+    launch_spread_deg 0
+    piercing_count 0
+    interceptable false
+    trajectory_mode Straight
+    target_leading true
+
+unit U06
+    name Interceptor
+    cost 200
+    squad_size 4
+    roles Anti-Air, Chaff Clear
+    unit_layer Air
+    target_layer Both
+    target_priority Air
+    footprint_w 4
+    footprint_d 2
+    radius_m 0.9
+    height_m 0.6
+    altitude_m 10
+    hp 230
+    armor 0
+    move_speed 20
+    range 55
+    damage 32
+    attack_interval 0.45
+    hits_or_shots_per_attack 2
+    splash_radius 0
+    attack_type GuidedProjectile
+    initial_speed_mps 50
+    forward_acceleration_mps2 100
+    max_speed_mps 120
+    lifetime_s 2.5
+    max_travel_m 200
+    collision_radius_m 0.15
+    gravity_scale 0
+    turn_rate_deg_s 240
+    guidance_delay_s 0.05
+    guidance_mode PredictiveInterception
+    aim_point_scatter_m 0
+    launch_spread_deg 0
+    piercing_count 0
+    interceptable false
+    trajectory_mode Straight
+    retargeting_allowed false
+    target_loss_behavior ContinueStraight
+    target_leading true
+
+unit U07
+    name Field Support
+    cost 200
+    squad_size 1
+    roles Support(future), Control(future)
+    unit_layer Ground
+    target_layer Ground
+    footprint_w 3
+    footprint_d 2
+    radius_m 1.5
+    height_m 2.5
+    hp 700
+    armor 5
+    move_speed 6
+    range 35
+    damage 15
+    attack_interval 1.0
+    hits_or_shots_per_attack 1
+    splash_radius 0
+    attack_type UnguidedProjectile
+    initial_speed_mps 120
+    forward_acceleration_mps2 0
+    lifetime_s 1.0
+    max_travel_m 60
+    collision_radius_m 0.1
+    gravity_scale 0
+    aim_point_scatter_m 0
+    launch_spread_deg 0
+    piercing_count 0
+    interceptable false
+    trajectory_mode Straight
+    target_leading true
+
+unit U08
+    name Railgun
+    cost 250
+    squad_size 1
+    roles Anti-Tank, Carry
+    unit_layer Ground
+    target_layer Ground
+    footprint_w 2
+    footprint_d 2
+    radius_m 1.2
+    height_m 2.5
+    hp 750
+    armor 5
+    move_speed 6
+    range 90
+    damage 600
+    attack_interval 3.0
+    hits_or_shots_per_attack 1
+    splash_radius 0
+    attack_type UnguidedProjectile
+    initial_speed_mps 400
+    forward_acceleration_mps2 0
+    lifetime_s 0.5
+    max_travel_m 130
+    collision_radius_m 0.08
+    gravity_scale 0
+    aim_point_scatter_m 0
+    launch_spread_deg 0
+    piercing_count 0
+    interceptable false
+    trajectory_mode Straight
+    target_leading true
+
+unit U09
+    name Sky Bomber
+    cost 275
+    squad_size 1
+    roles Siege, Chaff Clear
+    unit_layer Air
+    target_layer Ground
+    footprint_w 4
+    footprint_d 3
+    radius_m 2.5
+    height_m 1.5
+    altitude_m 10
+    hp 1050
+    armor 5
+    move_speed 9
+    range 85
+    damage 300
+    attack_interval 3.5
+    hits_or_shots_per_attack 1
+    splash_radius 7
+    attack_type UnguidedProjectile
+    initial_speed_mps 45
+    forward_acceleration_mps2 0
+    lifetime_s 5.0
+    max_travel_m 200
+    collision_radius_m 0.25
+    gravity_scale 0
+    aim_point_scatter_m 0
+    launch_spread_deg 0
+    piercing_count 0
+    interceptable false
+    trajectory_mode ScriptedArc
+    arc_height_m 20
+    retargeting_allowed false
+    target_leading false
+
+unit U10
+    name Artillery Platform
+    cost 300
+    squad_size 1
+    roles Siege, Chaff Clear
+    unit_layer Ground
+    target_layer Ground
+    footprint_w 3
+    footprint_d 3
+    radius_m 2.0
+    height_m 3.0
+    hp 900
+    armor 10
+    move_speed 3
+    range 130
+    damage 350
+    attack_interval 4.0
+    hits_or_shots_per_attack 1
+    splash_radius 8
+    attack_type UnguidedProjectile
+    initial_speed_mps 55
+    forward_acceleration_mps2 0
+    lifetime_s 6.0
+    max_travel_m 260
+    collision_radius_m 0.35
+    gravity_scale 0
+    aim_point_scatter_m 0
+    launch_spread_deg 0
+    piercing_count 0
+    interceptable false
+    trajectory_mode ScriptedArc
+    arc_height_m 30
+    retargeting_allowed false
+    target_leading false
 
 stage
     supply 1000
     seed 1
-    place Crawler 12 36
-    place Crawler 14 36
-    place Crawler 16 36
-    place Crawler 18 36
-    place Crawler 13 38
-    place Crawler 15 38
-    place Crawler 17 38
-    place Crawler 14 40
-    place Crawler 16 40
-    place Crawler 15 42
+    place U01 0 54
+    place U01 26 54
+    place U01 8 60
+    place U02 6 54
+    place U02 20 54
+    place U04 14 54
+    place U03 10 57
+    place U10 14 60

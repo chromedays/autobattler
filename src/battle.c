@@ -1,6 +1,7 @@
-// The rules of one round (docs/specs/battle.md, "Stage A rules"). A tick runs these steps in order: record the previous
-// positions, pick targets again, move and separate, fire weapons, advance shells, apply deaths, refill shields, check the
-// end. Every loop runs in slot order and nothing reads a clock, so the same deployment and seed always play the same.
+// The rules of one round (docs/specs/battle.md, "Stage A rules"; docs/specs/unit_fields.md, "Rules that change with it"). A tick
+// runs these steps in order: record the previous positions, pick targets again, move and separate, attack (strike or fire),
+// advance shells, apply deaths, check the end. Every loop runs in slot order and nothing reads a clock, so the same deployment
+// and seed always play the same.
 
 #include "battle.h"
 
@@ -8,8 +9,8 @@
 #include <math.h>
 #include <string.h>
 
-// What a hit is (shells test these three kinds, nearest first).
-typedef enum HitKind { HIT_NONE, HIT_SHIELD, HIT_UNIT, HIT_GROUND } HitKind;
+// What a shell hits (nearest first).
+typedef enum HitKind { HIT_NONE, HIT_UNIT, HIT_GROUND } HitKind;
 
 internal b32 is_alive(const Unit* unit)
 {
@@ -43,12 +44,14 @@ internal void add_event(Battle* battle, BattleEventKind kind, const Unit* unit, 
     *event = (BattleEvent){.kind = kind, .team = unit->team, .def = unit->def, .position = position, .direction = direction, .size = size};
 }
 
-u32 battle_squad_columns(u32 squad_size)
+SquadGrid battle_squad_grid(u32 squad_size, u32 w, u32 d)
 {
+    NV_ASSERT(squad_size >= 1 && w >= 1 && d >= 1);
+    // The fewest columns c with c * c >= squad_size * w / d, in whole numbers so that a square footprint is exact.
     u32 columns = 1;
-    while (columns * columns < squad_size)
+    while (columns < squad_size && (u64)columns * columns * d < (u64)squad_size * w)
         ++columns;
-    return columns;
+    return (SquadGrid){.columns = columns, .rows = (squad_size + columns - 1) / columns};
 }
 
 NvVec3 battle_cell_center(const BattleRules* rules, u32 cell_x, u32 cell_row)
@@ -56,7 +59,7 @@ NvVec3 battle_cell_center(const BattleRules* rules, u32 cell_x, u32 cell_row)
     return nv_vec3(((f32)cell_x + 0.5f) * rules->cell_size, 0.0f, ((f32)cell_row + 0.5f) * rules->cell_size);
 }
 
-// Puts a unit of a unit def in the next slot at `position` (its height included), as the def makes it: full health, a full
+// Puts a unit of a unit def in the next slot at `position` (its height included), as the def makes it: full hp, a full
 // shield, facing the other side (the player's +Z, the enemy's -Z). Returns its slot.
 internal u32 add_unit_at(Battle* battle, u32 def_index, u32 team, NvVec3 position, u32 flags)
 {
@@ -69,32 +72,31 @@ internal u32 add_unit_at(Battle* battle, u32 def_index, u32 team, NvVec3 positio
     unit->def = (u8)def_index;
     unit->position = unit->previous_position = position;
     unit->yaw = unit->previous_yaw = team == TEAM_PLAYER ? 0.0f : NV_PI; // the sides face each other
-    unit->health = def->health;
-    if (def->ability.kind == ABILITY_SHIELD)
-        unit->ability.shield.energy = def->ability.shield.capacity;
+    unit->health = def->hp;
+    unit->shield = def->shield_hp;
     return battle->unit_count;
 }
 
-// A squad's units stand on its footprint in a grid as near square as it gets (columns = ceil(sqrt(size))), each in the middle of
-// its share; a last row that is not full is centered. Rows run along +Z and the units are made row by row. A squad of one on
-// one cell stands on the cell's center.
+// A squad's units stand on its footprint in a grid as near square as its shape lets it (battle_squad_grid), each in the middle
+// of its share; a last row that is not full is centered. Rows run along +Z and the units are made row by row. A squad of one
+// stands on its footprint's center.
 internal void make_squad(Battle* battle, u32 def_index, u32 team, u32 cell_x, u32 cell_row)
 {
     const UnitDef* def = &battle->defs->units[def_index];
     const BattleRules* rules = &battle->defs->rules;
-    NV_ASSERT(def->squad_size >= 1 && def->footprint >= 1);
+    NV_ASSERT(def->squad_size >= 1 && def->footprint_w >= 1 && def->footprint_d >= 1);
     NV_ASSERT(battle->unit_count + def->squad_size < BATTLE_MAX_UNITS);
-    u32 columns = battle_squad_columns(def->squad_size);
-    u32 rows = (def->squad_size + columns - 1) / columns;
-    f32 footprint = (f32)def->footprint;
+    SquadGrid grid = battle_squad_grid(def->squad_size, def->footprint_w, def->footprint_d);
+    u32 columns = grid.columns, rows = grid.rows;
+    f32 w = (f32)def->footprint_w, d = (f32)def->footprint_d;
     NvVec3 corner = battle_cell_center(rules, cell_x, cell_row);
     f32 altitude = def->layer == UNIT_LAYER_AIR ? def->altitude : 0.0f;
     for (u32 i = 0; i < def->squad_size; ++i) {
         u32 row = i / columns, column = i % columns;
         u32 left = def->squad_size - row * columns, in_row = left < columns ? left : columns;
         // In cells from the corner cell's center; exactly 0 for a squad of one on one cell.
-        f32 x = ((f32)column + 0.5f + (f32)(columns - in_row) * 0.5f) * footprint / (f32)columns - 0.5f;
-        f32 z = ((f32)row + 0.5f) * footprint / (f32)rows - 0.5f;
+        f32 x = ((f32)column + 0.5f + (f32)(columns - in_row) * 0.5f) * w / (f32)columns - 0.5f;
+        f32 z = ((f32)row + 0.5f) * d / (f32)rows - 0.5f;
         add_unit_at(battle, def_index, team, nv_vec3_add(corner, nv_vec3(x * rules->cell_size, altitude, z * rules->cell_size)), 0);
     }
 }
@@ -154,8 +156,8 @@ BattleCell battle_squad_at(const Battle* battle, s32 cell_x, s32 cell_row)
             u32 placed = battle->placed[row][x];
             if (!placed)
                 continue;
-            s32 footprint = (s32)battle->defs->units[placed - 1].footprint;
-            if (cell_x < x + footprint && cell_row < row + footprint)
+            const UnitDef* def = &battle->defs->units[placed - 1];
+            if (cell_x < x + (s32)def->footprint_w && cell_row < row + (s32)def->footprint_d)
                 return (BattleCell){.ok = true, .x = x, .row = row};
         }
     }
@@ -168,12 +170,12 @@ b32 battle_can_place(const Battle* battle, u32 def, s32 cell_x, s32 cell_row)
     if (battle->phase != BATTLE_DEPLOY || def >= battle->defs->unit_count)
         return false;
     const UnitDef* unit = &battle->defs->units[def];
-    s32 footprint = (s32)unit->footprint;
-    if (cell_x < 0 || cell_x + footprint > (s32)rules->grid_width || cell_row < 0 || cell_row + footprint > (s32)rules->zone_rows
+    s32 w = (s32)unit->footprint_w, d = (s32)unit->footprint_d;
+    if (cell_x < 0 || cell_x + w > (s32)rules->grid_width || cell_row < 0 || cell_row + d > (s32)rules->zone_rows
         || unit->cost > battle_supply_left(battle) || battle->player_units + unit->squad_size > BATTLE_MAX_TEAM_UNITS)
         return false;
-    for (s32 row = cell_row; row < cell_row + footprint; ++row)
-        for (s32 x = cell_x; x < cell_x + footprint; ++x)
+    for (s32 row = cell_row; row < cell_row + d; ++row)
+        for (s32 x = cell_x; x < cell_x + w; ++x)
             if (battle_squad_at(battle, x, row).ok)
                 return false;
     return true;
@@ -224,7 +226,7 @@ f32 battle_remaining_value(const Battle* battle, u32 team)
         const Unit* unit = &battle->units[i];
         if (unit->team == team && is_alive(unit)) {
             const UnitDef* def = &battle->defs->units[unit->def];
-            value += (f32)def->cost / (f32)def->squad_size * unit->health / def->health;
+            value += (f32)def->cost / (f32)def->squad_size * unit->health / def->hp;
         }
     }
     return value;
@@ -266,7 +268,7 @@ void battle_seek(Battle* battle, u32 tick)
 internal u32 nearest_enemy(const Battle* battle, const Unit* unit)
 {
     u32 best = 0;
-    u32 targets = battle->defs->units[unit->def].weapon.targets;
+    u32 targets = battle->defs->units[unit->def].targets;
     f32 best_distance = FLT_MAX;
     for (u32 j = 1; j <= battle->unit_count; ++j) {
         const Unit* other = &battle->units[j];
@@ -316,9 +318,9 @@ internal void move_units(Battle* battle)
         NvVec3 to_target = nv_vec3_sub(battle->units[unit->target.index].position, unit->position);
         to_target.y = 0.0f;
         f32 distance = sqrtf(nv_vec3_dot(to_target, to_target));
-        f32 stop_distance = def->weapon.range * rules->stop_fraction;
+        f32 stop_distance = def->range * rules->stop_fraction;
         if (distance > stop_distance && !(unit->flags & UNIT_HOLD)) {
-            f32 step = fminf(def->speed * BATTLE_TICK_SECONDS, distance - stop_distance); // no overshooting the stop
+            f32 step = fminf(def->move_speed * BATTLE_TICK_SECONDS, distance - stop_distance); // no overshooting the stop
             unit->velocity = nv_vec3_scale(to_target, step / distance / BATTLE_TICK_SECONDS);
             unit->position = nv_vec3_add(unit->position, nv_vec3_scale(unit->velocity, BATTLE_TICK_SECONDS));
             unit->yaw = atan2f(unit->velocity.x, unit->velocity.z);
@@ -371,23 +373,57 @@ internal f32 flight_time(NvVec3 from, NvVec3 aim, f32 tan_angle, f32 gravity)
     return rise > 0.0f ? sqrtf(2.0f * rise / gravity) : 0.0f;
 }
 
+// Damage that reached a unit, from a shell or a strike: its shield takes the whole hit while it has any (D-05: no armor, nothing
+// spills over), else its health takes what armor leaves, at the tick's end.
+internal void hurt_unit(Battle* battle, u32 unit_index, f32 damage, NvVec3 point, NvVec3 direction)
+{
+    Unit* unit = &battle->units[unit_index];
+    if (unit->shield > 0.0f) {
+        f32 taken = fminf(unit->shield, damage);
+        unit->shield -= taken;
+        add_event(battle, BATTLE_EVENT_SHIELD_HIT, unit, point, direction, taken);
+        return;
+    }
+    f32 armor = battle->defs->units[unit->def].armor;
+    f32 hurt = fmaxf(damage - armor, damage * battle->defs->rules.min_damage_fraction);
+    unit->damage_taken += hurt;
+    add_event(battle, BATTLE_EVENT_HIT, unit, point, direction, hurt);
+}
+
+// The middle of a unit's body (its position is at its feet, an air unit's at its altitude).
+internal NvVec3 body_middle(const Battle* battle, const Unit* unit)
+{
+    NvVec3 middle = unit->position;
+    middle.y += battle->defs->units[unit->def].height * 0.5f;
+    return middle;
+}
+
+// A melee attack (D-13): no projectile, `hits_per_attack` hits on the target at once.
+internal void strike(Battle* battle, u32 unit_index)
+{
+    const Unit* unit = &battle->units[unit_index];
+    const UnitDef* def = &battle->defs->units[unit->def];
+    u32 target = unit->target.index;
+    NvVec3 point = body_middle(battle, &battle->units[target]);
+    NvVec3 to_target = nv_vec3_sub(point, body_middle(battle, unit));
+    NvVec3 direction = nv_vec3_dot(to_target, to_target) > 1e-12f ? nv_vec3_normalize(to_target) : nv_vec3(0.0f, 0.0f, 1.0f);
+    add_event(battle, BATTLE_EVENT_STRIKE, unit, point, direction, def->damage);
+    for (u32 i = 0; i < def->hits_per_attack; ++i)
+        hurt_unit(battle, target, def->damage, point, direction);
+}
+
+// The interim shell of every projectile attack (docs/specs/unit_fields.md, "Interim"): from the middle of the unit's body, at
+// BATTLE_INTERIM_LAUNCH_ANGLE, landing on its lead-aimed point give or take its aim_point_scatter.
 internal void fire_shell(Battle* battle, u32 unit_index)
 {
     Unit* unit = &battle->units[unit_index];
-    const WeaponDef* weapon = &battle->defs->units[unit->def].weapon;
+    const UnitDef* def = &battle->defs->units[unit->def];
     const Unit* target = &battle->units[unit->target.index];
-
-    // The unit's axes: forward (sin yaw, 0, cos yaw), up +Y, and right = forward x up = (-cos yaw, 0, sin yaw) (Y up and
-    // right-handed, so a unit facing +Z has its right toward -X).
-    f32 sin_yaw = sinf(unit->yaw), cos_yaw = cosf(unit->yaw);
-    NvVec3 muzzle = unit->position;
-    muzzle.x += -cos_yaw * weapon->muzzle.x + sin_yaw * weapon->muzzle.z;
-    muzzle.y += weapon->muzzle.y;
-    muzzle.z += sin_yaw * weapon->muzzle.x + cos_yaw * weapon->muzzle.z;
+    NvVec3 muzzle = body_middle(battle, unit);
 
     // Lead the target: where it will be when the shell lands, from its velocity now. The landing spot depends on the
     // flight time and the flight time on the landing spot, so they are solved in turn.
-    f32 tan_angle = tanf(weapon->launch_angle);
+    f32 tan_angle = tanf(BATTLE_INTERIM_LAUNCH_ANGLE);
     f32 gravity = battle->defs->rules.gravity;
     // An air target is aimed at the middle of its body, a ground target at its point on the ground.
     const UnitDef* target_def = &battle->defs->units[target->def];
@@ -398,14 +434,14 @@ internal void fire_shell(Battle* battle, u32 unit_index)
         aim.x = target->position.x + target->velocity.x * time;
         aim.z = target->position.z + target->velocity.z * time;
     }
-    // Spread: a point within a circle around it, evenly (the radius goes with the square root of the draw). Both numbers
-    // are drawn even when the spread is 0, so changing it does not shift the draws that follow.
-    f32 spread_radius = weapon->spread * sqrtf(nv_random_f32(&battle->rng));
+    // Scatter: a point within a circle around it, evenly (the radius goes with the square root of the draw). Both numbers
+    // are drawn even when the scatter is 0, so changing it does not shift the draws that follow.
+    f32 spread_radius = def->projectile.aim_point_scatter * sqrtf(nv_random_f32(&battle->rng));
     f32 spread_angle = 2.0f * NV_PI * nv_random_f32(&battle->rng);
     aim.x += spread_radius * cosf(spread_angle);
     aim.z += spread_radius * sinf(spread_angle);
 
-    // The launch velocity that lands on `aim` at the weapon's angle.
+    // The launch velocity that lands on `aim` at the angle.
     f32 time = flight_time(muzzle, aim, tan_angle, gravity);
     NvVec3 velocity = nv_vec3(0.0f, 0.0f, 0.0f);
     if (time > 0.0f) {
@@ -415,13 +451,13 @@ internal void fire_shell(Battle* battle, u32 unit_index)
 
     Projectile* shell = &battle->projectiles[battle->projectile_count++];
     *shell = (Projectile){.team = unit->team, .shooter = {unit_index}, .position = muzzle, .previous_position = muzzle,
-                          .velocity = velocity, .damage = weapon->damage, .targets = weapon->targets};
+                          .velocity = velocity, .damage = def->damage, .targets = def->targets};
     // No flight time (a muzzle at or below the ground right over its aim) leaves the shell still: it falls, and lands at once.
     NvVec3 direction = time > 0.0f ? nv_vec3_normalize(velocity) : nv_vec3(0.0f, -1.0f, 0.0f);
-    add_event(battle, BATTLE_EVENT_FIRE, unit, muzzle, direction, weapon->damage);
+    add_event(battle, BATTLE_EVENT_FIRE, unit, muzzle, direction, def->damage);
 }
 
-internal void fire_weapons(Battle* battle)
+internal void attack(Battle* battle)
 {
     for (u32 i = 1; i <= battle->unit_count; ++i) {
         Unit* unit = &battle->units[i];
@@ -429,15 +465,18 @@ internal void fire_weapons(Battle* battle)
             continue;
         if (unit->cooldown_ticks)
             --unit->cooldown_ticks;
-        if (unit->cooldown_ticks || !unit->target.index || battle->projectile_count == BATTLE_MAX_PROJECTILES)
-            continue; // with the pool full the weapon waits, ready, for a slot
-        const WeaponDef* weapon = &battle->defs->units[unit->def].weapon;
+        const UnitDef* def = &battle->defs->units[unit->def];
+        b32 melee = def->attack_type == ATTACK_MELEE;
+        if (unit->cooldown_ticks || !unit->target.index || (!melee && battle->projectile_count == BATTLE_MAX_PROJECTILES))
+            continue; // with the pool full a shooter waits, ready, for a slot
         const Unit* target = &battle->units[unit->target.index];
-        if (distance_xz_squared(unit->position, target->position) > weapon->range * weapon->range)
+        if (distance_xz_squared(unit->position, target->position) > def->range * def->range)
             continue;
-        fire_shell(battle, i);
-        u32 cooldown = battle_seconds_to_ticks(weapon->cooldown);
-        unit->cooldown_ticks = cooldown ? cooldown : 1;
+        if (melee)
+            strike(battle, i);
+        else
+            fire_shell(battle, i);
+        unit->cooldown_ticks = battle_seconds_to_ticks(def->attack_interval);
     }
 }
 
@@ -476,45 +515,17 @@ internal f32 segment_cylinder(NvVec3 start, NvVec3 end, NvVec3 base, f32 radius,
     return enter <= leave ? enter : 2.0f;
 }
 
-// Where the segment crosses the boundary of a sphere it starts outside of (0 to 1), or 2 when it does not.
-internal f32 segment_sphere_entry(NvVec3 start, NvVec3 end, NvVec3 center, f32 radius)
-{
-    NvVec3 d = nv_vec3_sub(end, start), f = nv_vec3_sub(start, center);
-    f32 c = nv_vec3_dot(f, f) - radius * radius;
-    f32 a = nv_vec3_dot(d, d);
-    if (c <= 0.0f || a < 1e-12f)
-        return 2.0f; // starts inside (the shield does not take what is already in it), or does not move
-    f32 b = nv_vec3_dot(f, d);
-    f32 discriminant = b * b - a * c;
-    if (discriminant < 0.0f)
-        return 2.0f;
-    f32 t = (-b - sqrtf(discriminant)) / a;
-    return t >= 0.0f && t <= 1.0f ? t : 2.0f;
-}
-
 typedef struct Hit {
     HitKind kind;
-    u32 unit; // the shield's or the unit's slot
+    u32 unit; // the unit's slot
     f32 t;    // along the segment, 0 to 1
 } Hit;
 
-// The first thing the shell's segment touches among enemy shields, enemy units and the ground; on a tie the earlier of
-// those kinds and the lower slot.
+// The first thing the shell's segment touches among the enemy units it can hit and the ground; on a tie a unit, the lower slot
+// first. A unit's shield is its own (no bubble): the shell hits the unit's cylinder and the unit's shield takes it.
 internal Hit find_hit(const Battle* battle, u8 team, u32 targets, NvVec3 start, NvVec3 end)
 {
     Hit hit = {HIT_NONE, 0, 2.0f};
-    for (u32 i = 1; i <= battle->unit_count; ++i) {
-        const Unit* unit = &battle->units[i];
-        const UnitDef* def = &battle->defs->units[unit->def];
-        if (unit->team == team || !is_alive(unit) || def->ability.kind != ABILITY_SHIELD || unit->ability.shield.energy <= 0.0f ||
-            !(targets & (1u << def->layer)))
-            continue;
-        NvVec3 center = unit->position;
-        center.y += def->height * 0.5f;
-        f32 t = segment_sphere_entry(start, end, center, def->ability.shield.radius);
-        if (t < hit.t)
-            hit = (Hit){HIT_SHIELD, i, t};
-    }
     for (u32 i = 1; i <= battle->unit_count; ++i) {
         const Unit* unit = &battle->units[i];
         const UnitDef* def = &battle->defs->units[unit->def];
@@ -538,9 +549,8 @@ internal void remove_projectile(Battle* battle, u32 index)
 }
 
 // Advances the shells one tick. Gravity is applied so that a tick's motion is exact for a constant pull (a shell lands
-// where the launch solved for, whatever the tick length). The segment each shell moved is tested for the first shield,
-// unit or ground it touches. A shield takes damage as energy, up to what it has: a shell it cannot take whole goes on from
-// the shield's boundary with the damage that is left, to whatever it touches next.
+// where the launch solved for, whatever the tick length). The segment each shell moved is tested for the first unit or ground
+// it touches, and the shell is gone there.
 internal void step_projectiles(Battle* battle)
 {
     const BattleRules* rules = &battle->defs->rules;
@@ -551,42 +561,16 @@ internal void step_projectiles(Battle* battle)
         shell->position.y -= 0.5f * rules->gravity * BATTLE_TICK_SECONDS * BATTLE_TICK_SECONDS;
         shell->velocity.y -= rules->gravity * BATTLE_TICK_SECONDS;
 
-        NvVec3 start = shell->previous_position;
-        b32 gone = false;
-        for (;;) {
-            Hit hit = find_hit(battle, shell->team, shell->targets, start, shell->position);
-            if (hit.kind == HIT_NONE)
-                break;
-            NvVec3 point = nv_vec3_add(start, nv_vec3_scale(nv_vec3_sub(shell->position, start), hit.t));
-            if (hit.kind == HIT_SHIELD) {
-                Unit* shield_unit = &battle->units[hit.unit];
-                f32 energy = shield_unit->ability.shield.energy;
-                f32 taken = fminf(energy, shell->damage);
-                shield_unit->ability.shield.energy = energy - taken;
-                shield_unit->ability.shield.since_hit_ticks = 0;
-                add_event(battle, BATTLE_EVENT_SHIELD_HIT, shield_unit, point, nv_vec3_normalize(shell->velocity), taken);
-                shell->damage -= taken;
-                if (shell->damage <= 0.0f) {
-                    gone = true;
-                    break;
-                }
-                start = point; // goes on, past the shield that is now off
-            } else {
-                if (hit.kind == HIT_UNIT) {
-                    Unit* unit = &battle->units[hit.unit];
-                    f32 armor = battle->defs->units[unit->def].armor;
-                    f32 damage = fmaxf(shell->damage - armor, shell->damage * rules->min_damage_fraction);
-                    unit->damage_taken += damage;
-                    add_event(battle, BATTLE_EVENT_HIT, unit, point, nv_vec3_normalize(shell->velocity), damage);
-                }
-                gone = true;
-                break;
-            }
-        }
-        if (gone)
-            remove_projectile(battle, i); // the last shell takes this slot and is stepped next, so `i` stays
-        else
+        Hit hit = find_hit(battle, shell->team, shell->targets, shell->previous_position, shell->position);
+        if (hit.kind == HIT_NONE) {
             ++i;
+            continue;
+        }
+        if (hit.kind == HIT_UNIT) {
+            NvVec3 point = nv_vec3_add(shell->previous_position, nv_vec3_scale(nv_vec3_sub(shell->position, shell->previous_position), hit.t));
+            hurt_unit(battle, hit.unit, shell->damage, point, nv_vec3_normalize(shell->velocity));
+        }
+        remove_projectile(battle, i); // the last shell takes this slot and is stepped next, so `i` stays
     }
 }
 
@@ -604,22 +588,6 @@ internal void apply_deaths(Battle* battle)
             unit->velocity = nv_vec3(0.0f, 0.0f, 0.0f);
             add_event(battle, BATTLE_EVENT_DEATH, unit, unit->position, nv_vec3(0.0f, 1.0f, 0.0f), 0.0f);
         }
-    }
-}
-
-// A shield that has not been hit for its delay refills; it is on again once it holds energy.
-internal void refill_shields(Battle* battle)
-{
-    for (u32 i = 1; i <= battle->unit_count; ++i) {
-        Unit* unit = &battle->units[i];
-        const AbilityDef* ability = &battle->defs->units[unit->def].ability;
-        if (!is_alive(unit) || ability->kind != ABILITY_SHIELD)
-            continue;
-        if (unit->ability.shield.since_hit_ticks < UINT32_MAX)
-            ++unit->ability.shield.since_hit_ticks;
-        if (unit->ability.shield.since_hit_ticks >= battle_seconds_to_ticks(ability->shield.regen_delay))
-            unit->ability.shield.energy = fminf(ability->shield.capacity,
-                                                unit->ability.shield.energy + ability->shield.regen * BATTLE_TICK_SECONDS);
     }
 }
 
@@ -651,10 +619,9 @@ void battle_tick(Battle* battle)
     }
     pick_targets(battle);
     move_units(battle);
-    fire_weapons(battle);
+    attack(battle);
     step_projectiles(battle);
     apply_deaths(battle);
-    refill_shields(battle);
     ++battle->tick;
     check_end(battle);
 }
@@ -675,7 +642,7 @@ u32 battle_hash(const Battle* battle)
         hash = nv_fnv1a(hash, &unit->health, sizeof(unit->health));
         hash = nv_fnv1a(hash, &unit->target, sizeof(unit->target));
         hash = nv_fnv1a(hash, &unit->cooldown_ticks, sizeof(unit->cooldown_ticks));
-        hash = nv_fnv1a(hash, &unit->ability.shield, sizeof(unit->ability.shield));
+        hash = nv_fnv1a(hash, &unit->shield, sizeof(unit->shield));
     }
     for (u32 i = 0; i < battle->projectile_count; ++i) {
         const Projectile* shell = &battle->projectiles[i];

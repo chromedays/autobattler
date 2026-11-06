@@ -49,17 +49,26 @@ typedef enum ProjectAction { PROJECT_OPEN, PROJECT_RELOAD, PROJECT_SAVE, PROJECT
 // What the viewport and the panel show: the battle, or the unit lab (docs/specs/unit_lab.md).
 typedef enum GameMode { GAME_MODE_BATTLE, GAME_MODE_LAB } GameMode;
 
-// A number key of a unit def the lab's Unit section edits (docs/specs/unit_lab.md, "Editing the unit's values"): where it is
-// in the file and in a UnitDef, and how its widget drags. `offset` is into the UnitDef.
-typedef enum UnitValueKind { UNIT_VALUE_INTEGER, UNIT_VALUE_NUMBER, UNIT_VALUE_ANGLE, UNIT_VALUE_VECTOR } UnitValueKind;
+// A number key of a unit def the lab's Unit section edits (docs/specs/unit_lab.md, "Editing the unit's values"): its key in the
+// file, where it is in a UnitDef, how its widget drags and when it is shown. `offset` is into the UnitDef. UNIT_VALUE_WHOLE is
+// a float the file writes as an integer (hp, armor, shield_hp, damage).
+typedef enum UnitValueKind { UNIT_VALUE_INTEGER, UNIT_VALUE_WHOLE, UNIT_VALUE_NUMBER, UNIT_VALUE_ANGLE } UnitValueKind;
+// The units a key is shown for: the keys that apply to them (docs/specs/unit_fields.md, "Keys").
+typedef enum UnitValueShown {
+    UNIT_VALUE_ALWAYS,
+    UNIT_VALUE_AIR,        // altitude_m
+    UNIT_VALUE_PROJECTILE, // not for Melee
+    UNIT_VALUE_GUIDED,     // only for GuidedProjectile
+    UNIT_VALUE_ARC,        // only for a ScriptedArc projectile
+} UnitValueShown;
 typedef struct UnitValueKey {
-    u32 block; // DefsBlock
     const char* key;
     const char* label;
     UnitValueKind kind;
     u32 offset;
     f32 speed, min, max; // the drag's; the project's reader judges
     b32 battle_only;     // the lab's run does not read it (it is for deployment): shown last, under its own heading
+    UnitValueShown shown;
 } UnitValueKey;
 
 // What the lab draws over its units, each on a box of the panel's View section (game->lab_hidden). A ring and its dimension go
@@ -86,11 +95,11 @@ typedef struct Layout {
 typedef struct DeployTarget {
     b32 remove;
     s32 x, row; // the corner of the footprint nearest the grid's origin
-    u32 size;   // the footprint's side, in cells
+    u32 w, d;   // the footprint's cells along +X and along the rows
 } DeployTarget;
 
 typedef struct Effects {
-    NvVfxEffectId explosion, shield_hit, muzzle;
+    NvVfxEffectId explosion, shield_hit, muzzle, strike;
     NvVfxLineStyle trail;
     NvVfxDecalStyle scorch;
 } Effects;
@@ -181,9 +190,9 @@ b32 game_load_project(Game* game, const char* name, const char* text, umm size);
 // it still fits; a bad one changes nothing and says why in the panel. True when the change was made.
 b32 game_rules_editable(const Game* game);
 b32 game_set_rule(Game* game, const char* key, const f64* values, u32 count);
-// The lab's Unit section (docs/specs/unit_lab.md, "Editing the unit's values"): changing key `key` of the lab's unit def (in
-// `block`, a DefsBlock) to `values`, as game_set_rule does for a rule. The lab takes a good change as any other.
-b32 game_set_unit_value(Game* game, u32 block, const char* key, const f64* values, u32 count);
+// The lab's Unit section (docs/specs/unit_lab.md, "Editing the unit's values"): changing number key `key` of the lab's unit
+// def to `value`, as game_set_rule does for a rule. The lab takes a good change as any other.
+b32 game_set_unit_value(Game* game, const char* key, f64 value);
 // Entering (or leaving) the unit lab: only from deployment and with a good project. Entering starts a run.
 b32 game_set_mode(Game* game, GameMode mode);
 // After the panel changed game->lab_settings: the lab takes the change (lab_change).
