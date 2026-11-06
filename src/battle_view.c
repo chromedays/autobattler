@@ -7,6 +7,8 @@
 
 #include "nv_version.h"
 
+#include <engine/icons.h>
+
 #include <float.h>
 #include <math.h>
 #include <stdio.h>
@@ -742,11 +744,18 @@ internal f32 button_width(const char* label)
     return igCalcTextSize(label, NULL, true, -1.0f).x + igGetStyle()->FramePadding.x * 2.0f;
 }
 
+// A label of an icon (engine/icons.h) and, unless `word` is NULL, a word after it, with the ImGui id `id` whatever the language.
+internal const char* icon_label(char* out, umm capacity, const char* icon, const char* word, const char* id)
+{
+    snprintf(out, capacity, "%s%s%s###%s", icon, word ? " " : "", word ? word : "", id);
+    return out;
+}
+
 // The playback bar (docs/specs/battle.md, "Playback bar"), under the viewport as in a video player. Its top row is the timeline:
 // the round (the lab's run as far as it has gone) with the time written in it; dragging it asks the frame for that tick
-// (game->seek_tick) and holds the game clock. Its bottom row is the round's buttons (Start and Retry; the lab's Restart), Pause or
-// Play, a tick back or forward (paused; held, they run through the ticks) and the game clock's speeds (the rules run the same ticks
-// at any speed, only more or fewer a frame). A button that does not fit goes on to the next row; the rows are counted for the
+// (game->seek_tick) and holds the game clock. Its bottom row is the round's buttons (Start and Retry; the lab's Restart: an icon
+// and a word), Pause or Play, a tick back or forward (paused; held, they run through the ticks; these three are icons alone, named
+// by a tooltip) and the game clock's speeds (the rules run the same ticks at any speed, only more or fewer a frame). A button that does not fit goes on to the next row; the rows are counted for the
 // bar's height in the next frame's layout.
 void view_bar(Game* game)
 {
@@ -790,50 +799,53 @@ void view_bar(Game* game)
 
     // The round's buttons start the bottom row.
     u32 rows = 2;
+    char label[96];
     if (lab) {
-        if (igButton(TL("Restart"), (ImVec2_c){0, 0}))
+        if (igButton(icon_label(label, sizeof(label), NV_ICON_ROTATE_CCW, T("Restart"), "restart"), (ImVec2_c){0, 0}))
             lab_view_restart(game);
     } else {
         b32 can_start = game->defs_ok && battle->phase == BATTLE_DEPLOY && battle_alive_count(battle, TEAM_PLAYER) > 0;
         igBeginDisabled(!can_start);
-        if (igButton(TL("Start"), (ImVec2_c){0, 0})) {
+        if (igButton(icon_label(label, sizeof(label), NV_ICON_SWORDS, T("Start"), "start"), (ImVec2_c){0, 0})) {
             start_over(game);
             game->paused = false; // a paused clock would make Start look broken
             battle_start(battle);
         }
         igEndDisabled();
-        bar_same_line(button_width(TL("Retry")), &rows);
+        bar_same_line(button_width(icon_label(label, sizeof(label), NV_ICON_ROTATE_CCW, T("Retry"), "retry")), &rows);
         igBeginDisabled(battle->phase == BATTLE_DEPLOY);
-        if (igButton(TL("Retry"), (ImVec2_c){0, 0})) {
+        if (igButton(label, (ImVec2_c){0, 0})) {
             start_over(game);
             battle_retry(battle);
         }
         igEndDisabled();
     }
 
-    // Pause and Play are one button, as wide as the wider of the two so that the buttons after it stay where they are.
-    char play[64];
-    snprintf(play, sizeof(play), "%s###play", game->paused ? T("Play") : T("Pause"));
-    f32 play_width = fmaxf(button_width(T("Play")), button_width(T("Pause")));
+    // Pause and Play are one button: the icon of what a press does, its name in the tooltip. It is as wide as the wider icon,
+    // so the buttons after it stay where they are.
+    f32 play_width = fmaxf(button_width(NV_ICON_PLAY), button_width(NV_ICON_PAUSE));
     bar_same_line(play_width, &rows);
-    if (igButton(play, (ImVec2_c){play_width, 0}))
+    if (igButton(icon_label(label, sizeof(label), game->paused ? NV_ICON_PLAY : NV_ICON_PAUSE, NULL, "play"), (ImVec2_c){play_width, 0}))
         game->paused = !game->paused;
+    igSetItemTooltip("%s", game->paused ? T("Play") : T("Pause"));
 
     b32 fighting = battle->phase == BATTLE_FIGHT;
     b32 can_step_back = lab ? battle->tick > 0 && !game->lab.changes_full : battle->phase != BATTLE_DEPLOY && battle->tick > 0;
-    bar_same_line(button_width(TL("< Tick")), &rows);
+    bar_same_line(button_width(NV_ICON_STEP_BACK), &rows);
     igBeginDisabled(!can_step_back);
-    if (step_button(TL("< Tick"))) {
+    if (step_button(icon_label(label, sizeof(label), NV_ICON_STEP_BACK, NULL, "tick_back"))) {
         game->step = -1;
         game->paused = true;
     }
+    igSetItemTooltip("%s", T("One tick back (hold to keep going)"));
     igEndDisabled();
-    bar_same_line(button_width(TL("Tick >")), &rows);
+    bar_same_line(button_width(NV_ICON_STEP_FORWARD), &rows);
     igBeginDisabled(!fighting);
-    if (step_button(TL("Tick >"))) {
+    if (step_button(icon_label(label, sizeof(label), NV_ICON_STEP_FORWARD, NULL, "tick_forward"))) {
         game->step = 1;
         game->paused = true;
     }
+    igSetItemTooltip("%s", T("One tick forward (hold to keep going)"));
     igEndDisabled();
 
     const f32 speeds[4] = {0.5f, 1.0f, 2.0f, 4.0f};

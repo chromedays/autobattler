@@ -467,8 +467,9 @@ float는 같은 빌드 안에서 결정적이고 `sinf` 같은 libm 함수도 �
     그림자 거리는 카메라 거리의 1.6배다(`SHADOW_DISTANCE_PER_CAMERA_DISTANCE`). 처음 카메라에서 전장의 먼 구석이 카메라 거리의
     약 1.4배라 모든 유닛에 그림자가 지고, 확대해도 맵의 텍셀이 화면에서 비슷한 크기로 남는다. 옮기거나 돌려도 거리는 그대로라 그림자가
     떨리지 않는다. 설정 UI는 없다.
-- **재생 막대:** 동영상 플레이어처럼 뷰포트 아래에 있다. 위 줄은 타임라인, 아래 줄은 Start, Retry(실험실에서는 Restart), Pause(일시정지
-  중에는 Play), `< Tick`, `Tick >`, 0.5x, 1x, 2x, 4x 버튼이다. 버튼은 단계가 바뀌어도 제자리에 있다. Start는 플레이어 유닛이 있는 배치
+- **재생 막대:** 동영상 플레이어처럼 뷰포트 아래에 있다. 위 줄은 타임라인, 아래 줄은 Start, Retry(실험실에서는 Restart; 아이콘과 낱말), Pause(일시정지
+  중에는 Play), 한 틱 뒤로, 한 틱 앞으로(이 셋은 아이콘만 있고 툴팁이 이름을 말한다; 엔진의 Lucide 아이콘, `engine/docs/specs/fonts.md`의
+  "아이콘"), 0.5x, 1x, 2x, 4x 버튼이다. 버튼은 단계가 바뀌어도 제자리에 있다. Start는 플레이어 유닛이 있는 배치
   단계에서, Retry는 배치 단계가 아닐 때 켜진다.
   - **타임라인:** 라운드 전체(0부터 Round time의 틱까지)의 슬라이더이고, 그 안에 시간(초와 틱: 초는 틱 수 ÷ 30이라 느린 기기에서는 실제
     시간보다 느리게 간다)을 쓴다. 끌거나 누르면 그 틱으로 간다: 앞으로는 지금 상태에서 그 틱까지 돌리고, 뒤로는 `battle_seek`가 처음부터
@@ -479,7 +480,7 @@ float는 같은 빌드 안에서 결정적이고 `sinf` 같은 libm 함수도 �
   수만 바꾸므로, 결과는 속도와 상관없이 같다. 누산기는 한 프레임에 최대 `4 × max(1, 속도)`틱만 돌리고, 더 밀리면 남은 시간을 버린다
   (느린 기기가 따라잡으려다 더 느려지지 않게). 프레임의 dt는 0.1초로 자른다. 이펙트도 같은 게임 시각을 받는다(`nv_vfx_update`): 일시정지는
   이펙트를 멈추고 배속은 빠르게 한다.
-  - **틱 단위 이동:** `< Tick`과 `Tick >` 버튼이 일시정지하고 한 틱 뒤로 또는 앞으로 간다(배치 단계에서는 꺼짐; 앞으로는 전투 중에만).
+  - **틱 단위 이동:** 한 틱 뒤로와 한 틱 앞으로 버튼이 일시정지하고 한 틱 뒤로 또는 앞으로 간다(배치 단계에서는 꺼짐; 앞으로는 전투 중에만).
     누르고 있으면 0.4초 뒤부터 프레임마다 한 틱씩 간다(ImGui의 ButtonRepeat는 느린 프레임에서 한 번 누름이 두 번이 되어 쓰지 않는다).
     앞으로는 틱 하나를 돌리고 그 틱의 이펙트에 1/30초를 준다(전투 시각은 멈춘 채). 뒤로는 `battle_seek`가 같은 배치와 시드로 라운드를
     처음부터 그 틱까지 다시 돌린다: 규칙이 결정적이므로 그때의 상태와 같다(해시가 같다). 거꾸로 돌릴 수 없는 이펙트는 지운다. 일시정지
@@ -557,7 +558,7 @@ Playwright(Release, Debug, 데스크톱과 폰 크기, A와 B 끝마다; 손으�
 플레이어 구역 밖(적 구역, 가운데)의 탭은 아무것도 하지 않는다; 공급이 다하면(10분대) 열한 번째는 거절된다; 드래그가 화면을 옮기고, 휠이
 확대하고, 오른쪽 드래그가 돌린다(그 뒤에도 탭이 맞는 칸에 놓인다); 재생 막대가 뷰포트 아래에 뷰포트와 같은 폭으로 있고 패널, 뷰포트와 겹치지 않는다; 막대의 Start로 전투가 시작되고 틱이 실시간으로 가며 전투 중에는
 놓을 수 없다; 속도 버튼이 속도를 바꾸고 Start가 일시정지를 푼다; 일시정지는 틱을 멈추고 4x는 1x보다 2.5배 넘게, 0.5x는 0.75배 안 되게
-돈다; `Tick >`가 한 틱씩 가고 `< Tick`이 같은 해시로 돌아가며, 누르고 있으면 여러 틱을 간다; 타임라인을 끌면 그 틱으로 가고(앞뒤 모두 그 틱까지 한 번에 돌린 것과 해시가 같다), 끄는 동안은 틱이 가지 않는다; 라운드가 결과로 끝난다(속도를 바꿔 가며 돈 결과가 한 번에 돌린 결과와 해시가 같다); Retry는 같은 배치로 돌아가고 같은 배치는 같은 해시를 낸다; Reset은 배치를 비우고 비면 Start가
+돈다; 한 틱 앞으로가 한 틱씩 가고 한 틱 뒤로가 같은 해시로 돌아가며, 누르고 있으면 여러 틱을 간다; 타임라인을 끌면 그 틱으로 가고(앞뒤 모두 그 틱까지 한 번에 돌린 것과 해시가 같다), 끄는 동안은 틱이 가지 않는다; 라운드가 결과로 끝난다(속도를 바꿔 가며 돈 결과가 한 번에 돌린 결과와 해시가 같다); Retry는 같은 배치로 돌아가고 같은 배치는 같은 해시를 낸다; Reset은 배치를 비우고 비면 Start가
 아무것도 하지 않는다; 좁은 창은 패널을 아래로 옮긴다; 콘솔에 오류와 경고가 없고 assert로 멈추지 않는다. Release에서는 디버그 내보내기가
 없으므로 같은 흐름을 눈으로(화면 그림) 본다. 폰 크기에서 패널 위젯을 터치하면 탭으로 알려지기까지 몇 프레임이 걸리므로 약 2초를 기다린다.
 
@@ -1089,7 +1090,8 @@ The engine is the Git submodule `engine/`, added with `add_subdirectory(engine)`
     every unit is shadowed, and the map's texels keep about the same size on screen as the camera zooms. Moving or turning the view
     keeps the distance, so shadows do not shimmer. There is no settings UI.
 - **Playback bar:** under the viewport, as in a video player. Its top row is the timeline, its bottom row the Start, Retry (Restart in
-  the lab), Pause (Play while paused), `< Tick`, `Tick >`, 0.5x, 1x, 2x and 4x buttons. The buttons stay where they are as the phase
+  the lab; an icon and a word), Pause (Play while paused), one tick back and one tick forward (these three are icons alone, named by
+  a tooltip; the engine's Lucide icons, "Icons" in `engine/docs/specs/fonts.md`), 0.5x, 1x, 2x and 4x buttons. The buttons stay where they are as the phase
   changes. Start is on in deployment when the player has a unit, Retry when not deploying.
   - **Timeline:** a slider over the whole round (0 to Round time's ticks), with the time written in it (seconds and ticks: the seconds
     are the tick count over 30, so on a slow device they run behind real time). Dragging or clicking it goes to that tick: forward runs
@@ -1103,7 +1105,7 @@ The engine is the Git submodule `engine/`, added with `add_subdirectory(engine)`
   `4 × max(1, speed)` ticks in a frame and drops the time left over beyond that (so a slow device does not slow down further trying
   to catch up). A frame's dt is cut to 0.1 s. The effects get the same game clock (`nv_vfx_update`): a pause freezes them and a
   speed-up hurries them.
-  - **Stepping a tick:** the `< Tick` and `Tick >` buttons pause and go one tick back or forward (off while deploying; forward only while
+  - **Stepping a tick:** the one-tick-back and one-tick-forward buttons pause and go one tick back or forward (off while deploying; forward only while
     fighting). Held, they go one tick a frame after 0.4 s (not ImGui's ButtonRepeat, which on a slow frame turns one click into two).
     Forward runs one tick and gives its effects 1/30 s (the battle's clock stays paused). Back is `battle_seek`, which plays the round
     again from its start with the same placement and seed up to that tick: the rules are deterministic, so it is the state the round
@@ -1188,7 +1190,7 @@ Playwright (Release and Debug, desktop and phone sizes, at the end of A and of B
 under it on a phone; taps place squads and remove them (a tap on any cell of the footprint); taps outside the player's zone (the enemy's zone, the middle) do nothing; when the supply
 runs out (10 squads) an eleventh is refused; a drag moves the view, the wheel zooms and a right drag turns it (taps still land on the right cell
 after); the playback bar is under the viewport, as wide as it, overlapping neither it nor the panel; Start in the bar starts the fight, ticks advance in real time and nothing can be placed during it; the speed buttons set the speed and Start un-pauses; a pause stops the ticks, 4x runs more
-than 2.5 times as many as 1x and 0.5x less than 0.75 times; `Tick >` goes one tick at a time and `< Tick` comes back to the same hash, and holding it
+than 2.5 times as many as 1x and 0.5x less than 0.75 times; one tick forward goes one tick at a time and one tick back comes back to the same hash, and holding it
 goes back several ticks; dragging the timeline goes to that tick (forward and back, the same hash as a run to it at once), and
 no tick runs while it is dragged; the round ends in a result (run at changing speeds, it gives the same hash
 as a run at once);
