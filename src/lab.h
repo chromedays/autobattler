@@ -68,6 +68,7 @@ typedef struct Lab {
     u32 change_count;
     u32 changes_applied; // the changes the run has passed: a step back leaves those after it to be played again
     b32 changes_full;    // a change did not fit, so the run cannot be played again: no stepping back
+    u32 furthest_tick;   // the furthest the run has gone (the playback bar's timeline); a change after a step back brings it back
     // The targets.
     NvVec3 homes[LAB_TARGET_COUNT];
     f32 directions[LAB_TARGET_COUNT]; // +1 or -1 along X while they move
@@ -101,8 +102,8 @@ void lab_reset_results(Lab* lab);
 // One 30 Hz tick: the targets' velocity, battle_tick, the results from its events and the targets that come back. The events
 // stay for the view (it clears them).
 void lab_tick(Lab* lab);
-// Puts the run back at `tick` by playing it again from its start with its changes. False (and nothing changes) when too many
-// changes went into the run to play it again.
+// Puts the run at `tick`: back by playing it again from its start with its changes, forward by running on from where it is.
+// False (and nothing changes) for a step back when too many changes went into the run to play it again.
 b32 lab_seek(Lab* lab, u32 tick);
 
 u32 lab_misses(const Lab* lab); // shots that hit nothing: not hits and no longer in flight

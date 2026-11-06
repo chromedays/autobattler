@@ -86,7 +86,7 @@
 
 **되감기를 위한 기록:** 바로 건 바꾸기는 그 틱과 바꾼 뒤의 실험실 정의 사본과 설정을 기록에 남긴다(`Lab.changes`, 최대 4096개: 위젯을 끌면 프레임마다 하나가 생기므로, 1분 넘게 끌어야 찬다). `lab_seek`는
 처음부터 다시 돌리면서 기록된 틱마다 같은 바꾸기를 같은 방식으로 건다. 그래서 바꾸기가 섞인 실험도 되감기가 정확하다. 기록이 차면
-더 바꿀 수는 있지만 기록하지 않고, `< Tick`이 꺼지며 "Too many changes to step back; Restart to step back again"을 보인다. Restart와
+더 바꿀 수는 있지만 기록하지 않고, 한 틱 뒤로 버튼이 꺼지며 "Too many changes to step back; Restart to step back again"을 보인다. Restart와
 다시 시작하는 바꾸기가 기록을 비운다.
 
 ### 규칙 (전투 규칙과 다른 것만)
@@ -171,13 +171,17 @@ Reset results 버튼은 측정값만 지운다(실험은 그대로 이어진다)
 
 ### 시간
 
-전투와 같은 게임 시각(`battle.md`의 "시간 조작")이다: Pause, 0.5x, 1x, 2x, 4x, `< Tick`, `Tick >`. 실험은 끝이 없으므로 `Tick >`은
-언제나 켜져 있다.
+전투와 같은 게임 시각과 재생 막대(`battle.md`의 "재생 막대", "시간 조작")다: Restart, Pause/Play, 한 틱 뒤로, 한 틱 앞으로, 0.5x, 1x, 2x, 4x.
+실험은 끝이 없으므로 한 틱 앞으로는 언제나 켜져 있다.
 
-- `< Tick`은 `lab_seek(lab, tick)`: 실험의 처음 정의와 설정으로 처음부터 그 틱까지 다시 돌리고, 기록된 바꾸기를 그 틱마다 다시 건다
+- 타임라인은 0부터 실험이 가 본 가장 먼 틱(`Lab.furthest_tick`)까지다. 앞으로 끌면 지금 상태에서 그 틱까지 돌리고(기록이 차도 된다),
+  뒤로 끌면 `lab_seek`가 처음부터 다시 돌린다(기록이 차면 뒤로는 가지 않는다). 되감은 뒤에 바꾸면 그 뒤의 기록과 함께 가장 먼 틱도
+  지금 틱으로 돌아온다.
+
+- 한 틱 뒤로는 `lab_seek(lab, tick)`: 실험의 처음 정의와 설정으로 처음부터 그 틱까지 다시 돌리고, 기록된 바꾸기를 그 틱마다 다시 건다
   ("바꾸기와 다시 시작" 절). 다시 돌린 상태와 측정값은 그때와 같다(해시가 같다). 비용은 틱 수에 비례한다(유닛 셋이라 10분 실험도 작다).
   되감기는 기록을 지우지 않는다. 되감은 뒤에 바꾸면 그 틱 뒤의 기록을 버리고 새 바꾸기를 남긴다.
-- 패널에 실험 시간(초와 틱)을 보인다.
+- 실험 시간(초와 틱)은 타임라인 안에 쓴다.
 
 ### 그리기
 
@@ -208,12 +212,13 @@ Range(사거리 원과 그 치수), Stop distance(정지 거리 원과 그 치�
 
 ### 패널
 
-실험실 모드에서 위에서 아래로: 단계 대신 "Unit Lab", 언어 콤보, UI scale 콤보(`battle.md`의 "실행 파일"), 모드 버튼, 프로젝트 줄(Open..., Reload, Save, Save as...), Rules
-절(접힌 채 시작; 실험실에서 싸움을 바꾸는 넷만: Gravity, Retarget interval, Stop fraction, Min. damage fraction. 구역이 없고 라운드가
-끝나지 않으며 전장 크기는 표적 거리의 한계일 뿐이라, Cell size, Grid, Zone rows, Round time은 보이지 않는다), 유닛 고르기(이름만의 버튼과
-레이어 줄; 분대 수와 비용은 배치의 정보라 버튼에 쓰지 않는다; 역할 필터는 전투와 같이 쓴다), 분대 줄("A squad of 6: the lab tries one of
-them."), Restart 버튼과 Restart on change 체크, 시간 버튼, 실험 시간, Lab 절(실험 조건, 펼침), View 절(그리는 것의 체크, 펼침), Unit 절(유닛 값
-고치기, 접힘), Results 절(측정값, 빗나감, 기대값, 바꾼 횟수, Reset results; 펼침), 짧은 도움말. 패널은 길어서 세로로 스크롤한다. 모든 글자는
+실험실 모드에서 위에서 아래로(전투처럼 자주 쓰는 것이 위; `battle.md`의 "Battle 패널"): 단계 대신 "Unit Lab", 모드 버튼, 유닛
+고르기(이름만의 버튼과 레이어 줄; 분대 수와 비용은 배치의 정보라 버튼에 쓰지 않는다; 역할 필터는 전투와 같이 쓴다), 분대 줄("A squad of
+6: the lab tries one of them."), Restart on change 체크, Lab 절(실험 조건, 펼침), View 절(그리는 것의 체크, 펼침), Unit 절(유닛 값 고치기,
+접힘), Results 절(측정값, 빗나감, 기대값, 바꾼 횟수, Reset results; 펼침), 프로젝트 줄(Open..., Reload, Save, Save as...), Rules 절(접힌 채
+시작; 실험실에서 싸움을 바꾸는 넷만: Gravity, Retarget interval, Stop fraction, Min. damage fraction. 구역이 없고 라운드가 끝나지 않으며
+전장 크기는 표적 거리의 한계일 뿐이라, Cell size, Grid, Zone rows, Round time은 보이지 않는다), 언어 콤보, UI scale 콤보(`battle.md`의
+"실행 파일"), 짧은 도움말. Restart, 시간 버튼과 실험 시간은 재생 막대에 있다("시간" 절). 패널은 길어서 세로로 스크롤한다. 모든 글자는
 `T()`/`TL()`을 거치고 한국어 행을 `src/strings.c`에 더한다. Unit 절의 이름표는 키 표(`lab_view.c`의 `unit_value_keys`, `.label =`)에 있고
 보일 때 `T()`를 거친다.
 
@@ -280,7 +285,7 @@ Windows의 스크립트(`engine/debug_script.h`)가 받는 인수는 정수와 �
 Playwright(Release, Debug, 데스크톱과 폰 크기; 손으로 돌리는 검사이고 스크립트는 저장소에 없다): 실험실에 들어가고(Release는 패널의
 Unit Lab 버튼을 눌러) 틱이 실시간으로 간다; 발사와 명중이 늘고 지상 표적이 죽었다가 다시 생기며, Crawler는 공중 표적을 노리지도
 죽이지도 않는다; Restart on change가 꺼져 있으면 조건을 바꿔도 틱과 측정값이 이어지고, 켜져 있으면 처음부터 다시 시작한다; `damage`를
-바꾸면 "(changed)"가 붙고 글에 새 값이 쓰이며, 나쁜 값은 이유와 함께 거절된다; `Tick >`이 한 틱 가고 `< Tick`이 같은 해시로 돌아간다;
+바꾸면 "(changed)"가 붙고 글에 새 값이 쓰이며, 나쁜 값은 이유와 함께 거절된다; 한 틱 앞으로가 한 틱 가고 한 틱 뒤로가 같은 해시로 돌아간다;
 `Battle`로 돌아가면 배치 단계이고, 라운드 중에는 실험실이 열리지 않는다; 패널을 스크롤해 Results와 Unit 절을 보고, 폰 크기에서 패널이
 아래로 간다; 콘솔에는 favicon의 404와 거절한 값의 오류 로그 말고는 오류와 경고가 없다. Windows Debug 빌드는 같은 흐름을 `--script`로
 돌려 `[d3d12]` 메시지가 없는지 본다(아직 하지 않음).

@@ -2404,6 +2404,10 @@ internal void test_seek(void)
     CHECK(battle.tick == 120 && battle_hash(&battle) == hashes[120]);
     battle_tick(&battle); // and on from there as if it had never stopped
     CHECK(battle_hash(&battle) == hashes[121]);
+    battle_seek(&battle, 200); // forward from the middle runs on, to the same state
+    CHECK(battle.tick == 200 && battle.event_count == 0 && battle_hash(&battle) == hashes[200]);
+    battle_seek(&battle, 200); // where it is: nothing changes
+    CHECK(battle.tick == 200 && battle_hash(&battle) == hashes[200]);
     battle_seek(&battle, last + 50); // past the end: the round ends where it ends
     CHECK(battle.phase == BATTLE_RESULT && battle.tick == last && battle_hash(&battle) == hashes[last]);
 }
@@ -2981,14 +2985,19 @@ internal void test_lab_seek(void)
         }
     }
     // Forward again from a step back: the recorded changes go in at their ticks.
+    CHECK(lab.furthest_tick == 600);
     CHECK(lab_seek(&lab, 150));
     lab_run(450);
     CHECK(lab.battle.tick == 600 && lab_state_hash() == hashes[600]);
+    // A seek forward runs on to the same state, the changes on the way included.
+    CHECK(lab_seek(&lab, 50) && lab_seek(&lab, 450));
+    CHECK(lab.battle.tick == 450 && lab.battle.event_count == 0 && lab_state_hash() == hashes[450]);
+    CHECK(lab_seek(&lab, 600) && lab_state_hash() == hashes[600] && lab.furthest_tick == 600);
     // A change after a step back drops the ones that came later.
     CHECK(lab_seek(&lab, 150) && lab.change_count == 4);
     settings.distance = 30.0f;
     lab_change(&lab, &defs, &settings);
-    CHECK(lab.change_count == 2);
+    CHECK(lab.change_count == 2 && lab.furthest_tick == 150);
     // Too many changes to play again: no stepping back.
     for (u32 i = 0; i < LAB_MAX_CHANGES; ++i) {
         settings.distance = i % 2 ? 30.0f : 31.0f;
@@ -2996,8 +3005,9 @@ internal void test_lab_seek(void)
         lab_run(1);
     }
     CHECK(lab.changes_full && !lab_seek(&lab, 10) && lab.battle.tick == 150 + LAB_MAX_CHANGES);
+    CHECK(lab_seek(&lab, 160 + LAB_MAX_CHANGES) && lab.battle.tick == 160 + LAB_MAX_CHANGES); // forward needs no record
     lab_start(&lab, &defs, &settings);
-    CHECK(!lab.changes_full && lab_seek(&lab, 0));
+    CHECK(!lab.changes_full && lab_seek(&lab, 0) && lab.furthest_tick == 0);
 }
 
 int main(void)

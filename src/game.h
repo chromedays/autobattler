@@ -88,6 +88,7 @@ enum { FIELD_GROUND, FIELD_PLAYER_ZONE, FIELD_ENEMY_ZONE, FIELD_PLANE_COUNT };
 typedef struct Layout {
     NvRect viewport; // framebuffer pixels: where the field is drawn and the camera and taps are read
     NvRect panel;
+    NvRect bar;      // the playback bar, under the viewport and as wide as it
     NvSceneOutput scene;
 } Layout;
 
@@ -137,7 +138,11 @@ typedef struct Game {
     f32 accumulator; // seconds of game time not yet run as ticks
     f32 speed;       // game time per real second: 0.5, 1, 2 or 4 (docs/specs/battle.md, "Time controls")
     b32 paused;      // the game clock stops; the speed is kept for when it goes on
-    s32 step;        // asked by the panel for this frame: +1 one tick forward, -1 one tick back (both pause)
+    s32 step;        // asked by the playback bar for this frame: +1 one tick forward, -1 one tick back (both pause)
+    b32 seek_wanted; // the bar's timeline asked for `seek_tick` this frame
+    u32 seek_tick;
+    b32 scrubbing;   // the timeline is being dragged: the game clock does not run
+    u32 bar_rows;    // the rows the playback bar's widgets took last frame, which its height is made for
     f64 last_time;
     char download_text[48];
 
@@ -215,19 +220,20 @@ void view_input(Game* game); // the camera from drags and the wheel; taps place 
 void view_on_tick(Game* game); // after each battle_tick: effects for its events and shells; clears the events
 void view_update(Game* game, f32 game_dt); // every frame: nodes follow the units and shells, lines, effects' clock
 void view_panel(Game* game);  // the Battle panel
+void view_bar(Game* game);    // the playback bar under the viewport (docs/specs/battle.md, "Playback bar")
 void view_draw_build_label(Game* game);
 // Shared with lab_view.c.
 void view_set_unit_mesh(Game* game, NvMeshId* mesh, const UnitDef* def); // made, or remade in its slot
 void view_draw_ring(NvRenderer* renderer, NvVec3 center, NvVec3 u, NvVec3 v, f32 radius, NvVec3 color);
 // The role filter and a button per unit def (with its squad and cost for `deployment`); true when one was pressed.
 b32 view_unit_buttons(Game* game, u32* selected, b32 enabled, b32 deployment);
-void view_time_controls(Game* game, b32 can_step_back, b32 can_step_forward);
 
 // lab_view.c
 void lab_view_start(Game* game);  // the camera on the lab's unit and targets
 void lab_view_draw(Game* game);    // every frame in the lab, before its units are drawn: its meshes kept up
 void lab_view_overlay(Game* game); // every frame in the lab, after the camera is placed: rings, paths and dimensions
 void lab_view_panel(Game* game);  // the panel's lab sections
+void lab_view_restart(Game* game); // the bar's Restart: the run starts over
 const UnitValueKey* lab_unit_value_key(u32 index); // NULL past the last
 
 // strings.c

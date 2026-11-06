@@ -20,8 +20,8 @@ global u8 scratch_memory[NV_MEGABYTES(4)];
 
 #define MAX_TICKS_PER_FRAME 4 // at 1x; more at higher speeds, which need more ticks a frame
 
-// The viewport and the panel never overlap, since input that starts in the viewport skips ImGui: the panel is on the right
-// of a wide canvas and under a tall one.
+// The viewport, the panel and the playback bar never overlap, since input that starts in the viewport skips ImGui: the panel is
+// on the right of a wide canvas and under a tall one, and the bar is under the viewport, as wide as it.
 f32 game_ui_scale(const Game* game)
 {
     return game->imgui.ui_scale * game->ui_zoom;
@@ -37,18 +37,34 @@ internal void apply_ui_zoom(Game* game, f32 zoom)
     game->ui_zoom = game->ui_zoom_wanted = zoom;
 }
 
+// The playback bar's height in CSS pixels: its rows (the timeline and the buttons at least; more when the buttons wrapped last
+// frame) in the style the UI is drawn with, but never more than half of `room`.
+internal f32 bar_height(const Game* game, f32 room)
+{
+    const ImGuiStyle* style = igGetStyle();
+    f32 font = style->FontSizeBase * style->FontScaleMain;
+    u32 rows = game->bar_rows > 2 ? game->bar_rows : 2;
+    f32 height = (f32)rows * (font + style->FramePadding.y * 2.0f) + (f32)(rows - 1) * style->ItemSpacing.y + style->WindowPadding.y * 2.0f;
+    return fminf(ceilf(height), room * 0.5f);
+}
+
 void game_layout(Game* game)
 {
     f32 ratio = nv_window_pixel_ratio(&game->window);
     f32 width_css = (f32)game->gpu.width / ratio, height_css = (f32)game->gpu.height / ratio;
     if (width_css >= height_css * 1.1f) {
         f32 panel_width_css = fminf(PANEL_WIDTH * game_ui_scale(game), width_css * 0.5f);
-        game->layout.viewport = nv_window_framebuffer_rect_from_css(0.0f, 0.0f, width_css - panel_width_css, height_css, ratio);
-        game->layout.panel = nv_window_framebuffer_rect_from_css(width_css - panel_width_css, 0.0f, width_css, height_css, ratio);
+        f32 view_width_css = width_css - panel_width_css;
+        f32 view_height_css = height_css - bar_height(game, height_css);
+        game->layout.viewport = nv_window_framebuffer_rect_from_css(0.0f, 0.0f, view_width_css, view_height_css, ratio);
+        game->layout.bar = nv_window_framebuffer_rect_from_css(0.0f, view_height_css, view_width_css, height_css, ratio);
+        game->layout.panel = nv_window_framebuffer_rect_from_css(view_width_css, 0.0f, width_css, height_css, ratio);
     } else {
-        f32 panel_height_css = height_css * PANEL_HEIGHT_SHARE;
-        game->layout.viewport = nv_window_framebuffer_rect_from_css(0.0f, 0.0f, width_css, height_css - panel_height_css, ratio);
-        game->layout.panel = nv_window_framebuffer_rect_from_css(0.0f, height_css - panel_height_css, width_css, height_css, ratio);
+        f32 panel_top_css = height_css - height_css * PANEL_HEIGHT_SHARE;
+        f32 view_height_css = panel_top_css - bar_height(game, panel_top_css);
+        game->layout.viewport = nv_window_framebuffer_rect_from_css(0.0f, 0.0f, width_css, view_height_css, ratio);
+        game->layout.bar = nv_window_framebuffer_rect_from_css(0.0f, view_height_css, width_css, panel_top_css, ratio);
+        game->layout.panel = nv_window_framebuffer_rect_from_css(0.0f, panel_top_css, width_css, height_css, ratio);
     }
     game->layout.scene = nv_renderer_scene_output(&game->resolution, game->layout.viewport);
 }
@@ -348,12 +364,13 @@ internal void frame(void* userdata)
     poll_local_file(game);
     view_draw_build_label(game);
     view_panel(game);
+    view_bar(game);
     view_input(game);
 
     // The game clock: real time times the speed, stopped while paused. The battle runs it in whole ticks, so a speed only
     // changes how many ticks a frame runs (the result is the same at any speed); what is left over decides where between
-    // two ticks the view draws. The effects follow the same clock.
-    f32 game_dt = game->paused ? 0.0f : dt * game->speed;
+    // two ticks the view draws. The effects follow the same clock. It stands still while the timeline is dragged.
+    f32 game_dt = game->paused || game->scrubbing ? 0.0f : dt * game->speed;
     f32 effects_dt = game_dt;
     Battle* battle = game_shown_battle(game);
     b32 lab = game->mode == GAME_MODE_LAB;
@@ -372,8 +389,18 @@ internal void frame(void* userdata)
         else
             battle_seek(battle, battle->tick - 1);
         nv_vfx_clear(&game->vfx);
+    } else if (game->defs_ok && game->seek_wanted && battle->phase != BATTLE_DEPLOY && game->seek_tick != battle->tick) {
+        // The timeline: forward runs on, back replays (lab_seek refuses that when its record is full). The ticks skipped
+        // make no effects, and those left are cleared, as for a step back.
+        if (lab)
+            lab_seek(&game->lab, game->seek_tick);
+        else
+            battle_seek(battle, game->seek_tick);
+        nv_vfx_clear(&game->vfx);
+        game->accumulator = 0.0f;
     }
     game->step = 0;
+    game->seek_wanted = false;
     if (game->defs_ok && battle->phase == BATTLE_FIGHT) {
         game->accumulator += game_dt;
         u32 max_ticks = (u32)ceilf(MAX_TICKS_PER_FRAME * fmaxf(game->speed, 1.0f));
@@ -461,6 +488,13 @@ NV_DEBUG_EXPORT void battle_debug_step(int direction)
     game_state.paused = true;
 }
 
+// Goes to `tick` as the playback bar's timeline does, taken by the next frame; the clock stays paused or not as it was.
+NV_DEBUG_EXPORT void battle_debug_seek(int tick)
+{
+    game_state.seek_wanted = tick >= 0;
+    game_state.seek_tick = tick >= 0 ? (u32)tick : 0;
+}
+
 // Loads `text` as a project named `name`, as a local file opened in the panel would be; 1 when it was good.
 NV_DEBUG_EXPORT int battle_debug_load(const char* name, const char* text)
 {
@@ -540,12 +574,13 @@ NV_DEBUG_EXPORT void battle_debug_run(int ticks)
     }
 }
 
-// A region's rectangle in CSS pixels: region 0 the viewport, 1 the panel; component 0 x, 1 y, 2 width, 3 height.
+// A region's rectangle in CSS pixels: region 0 the viewport, 1 the panel, 2 the playback bar; component 0 x, 1 y, 2 width,
+// 3 height.
 NV_DEBUG_EXPORT float battle_debug_layout(int region, int component)
 {
     const Game* game = &game_state;
     f32 ratio = nv_window_pixel_ratio(&game->window);
-    const NvRect* r = region ? &game->layout.panel : &game->layout.viewport;
+    const NvRect* r = region == 2 ? &game->layout.bar : region ? &game->layout.panel : &game->layout.viewport;
     f32 values[4] = {(f32)r->x / ratio, (f32)r->y / ratio, (f32)r->width / ratio, (f32)r->height / ratio};
     return values[component];
 }
@@ -682,6 +717,7 @@ internal const NvDebugCall battle_debug_calls[] = {
     {"debug", "i>i", (void*)battle_debug},
     {"set_speed", "f>v", (void*)battle_debug_set_speed},
     {"step", "i>v", (void*)battle_debug_step},
+    {"seek", "i>v", (void*)battle_debug_seek},
     {"deploy", "iii>i", (void*)battle_debug_deploy},
     {"start", ">i", (void*)battle_debug_start},
     {"run", "i>v", (void*)battle_debug_run},

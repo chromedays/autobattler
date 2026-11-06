@@ -442,7 +442,9 @@ float는 같은 빌드 안에서 결정적이고 `sinf` 같은 libm 함수도 �
   - `build.yml`의 Package가 `--component autobattler`를 `dist/autobattler-web/release`와 `.../debug`에 설치하고, publish 잡이
     그것을 대시보드에 올린다.
 - **화면:** 전장이 뷰포트이고 ImGui 창 하나(Battle 패널)가 그 옆에 붙는다: 넓은 화면에서는 오른쪽(폭 300), 세로로 긴 화면에서는 아래
-  (높이 42%). 뷰포트에서 시작한 입력은 ImGui를 건너뛰므로 둘은 겹치지 않는다. **UI 크기:** 언어 콤보 아래의 UI scale 콤보(100%–250%, 저장하지 않음)가
+  (높이 42%). 뷰포트 아래에는 재생 막대(ImGui 창 하나; "재생 막대")가 뷰포트와 같은 폭으로 붙는다: 넓은 화면에서는 패널 왼쪽,
+  세로로 긴 화면에서는 뷰포트와 패널 사이. 뷰포트에서 시작한 입력은 ImGui를 건너뛰므로 셋은 겹치지 않는다. 막대의 높이는 그 줄 수(위젯이
+  한 줄에 다 들어가지 않으면 다음 줄로 넘어간다; 지난 프레임에 센 수)로 정한다. **UI 크기:** 언어 콤보 아래의 UI scale 콤보(100%–250%, 저장하지 않음)가
   글자, 위젯, 패널 폭(300 × 크기, 화면 폭의 절반까지)을 키운다. 데스크톱은 200%로 시작하고, 터치 화면은 엔진의 크기(1.3배) 그대로 시작한다.
   엔진의 `ui_scale`은 터치 화면인지도 알리므로 게임은 그것을 바꾸지 않고, 엔진의 스타일에 자기 배율(`Game.ui_zoom`)을 곱한다(바꾼 것은 다음
   프레임이 시작할 때 걸린다). 에디터의 도크, 검색, 팔레트, 저장, undo, 선택, 콘솔
@@ -465,12 +467,20 @@ float는 같은 빌드 안에서 결정적이고 `sinf` 같은 libm 함수도 �
     그림자 거리는 카메라 거리의 1.6배다(`SHADOW_DISTANCE_PER_CAMERA_DISTANCE`). 처음 카메라에서 전장의 먼 구석이 카메라 거리의
     약 1.4배라 모든 유닛에 그림자가 지고, 확대해도 맵의 텍셀이 화면에서 비슷한 크기로 남는다. 옮기거나 돌려도 거리는 그대로라 그림자가
     떨리지 않는다. 설정 UI는 없다.
-- **시간 조작:** 게임 시각은 실제 시각 × 속도이고 일시정지 중에는 멈춘다. 패널의 Pause와 0.5x, 1x, 2x, 4x 버튼이 바꾼다(고른 것이
-  밝다; 일시정지는 속도를 기억한다; Start는 일시정지를 푼다; 저장하지 않는다). 규칙은 같은 30 Hz 틱을 돌고 속도는 한 프레임에 도는 틱
+- **재생 막대:** 동영상 플레이어처럼 뷰포트 아래에 있다. 위 줄은 타임라인, 아래 줄은 Start, Retry(실험실에서는 Restart; 아이콘과 낱말), Pause(일시정지
+  중에는 Play), 한 틱 뒤로, 한 틱 앞으로(이 셋은 아이콘만 있고 툴팁이 이름을 말한다; 엔진의 Lucide 아이콘, `engine/docs/specs/fonts.md`의
+  "아이콘"), 0.5x, 1x, 2x, 4x 버튼이다. 버튼은 단계가 바뀌어도 제자리에 있다. Start는 플레이어 유닛이 있는 배치
+  단계에서, Retry는 배치 단계가 아닐 때 켜진다.
+  - **타임라인:** 라운드 전체(0부터 Round time의 틱까지)의 슬라이더이고, 그 안에 시간(초와 틱: 초는 틱 수 ÷ 30이라 느린 기기에서는 실제
+    시간보다 느리게 간다)을 쓴다. 끌거나 누르면 그 틱으로 간다: 앞으로는 지금 상태에서 그 틱까지 돌리고, 뒤로는 `battle_seek`가 처음부터
+    다시 돌린다(규칙이 결정적이라 둘 다 그 틱의 상태와 같다). 라운드가 그보다 먼저 끝나면 끝난 틱에 선다. 건너뛴 틱의 이벤트는 효과를 내지
+    않고, 남은 이펙트는 지운다. 끄는 동안은 게임 시각이 가지 않고, 놓으면 일시정지 여부 그대로 이어 간다. 배치 단계에서는 꺼져 있다.
+- **시간 조작:** 게임 시각은 실제 시각 × 속도이고 일시정지 중에는 멈춘다. 재생 막대의 Pause/Play와 0.5x, 1x, 2x, 4x 버튼이 바꾼다(고른 것이
+  밝다; 일시정지는 속도를 기억한다; 속도 버튼과 Start는 일시정지를 푼다; 저장하지 않는다). 규칙은 같은 30 Hz 틱을 돌고 속도는 한 프레임에 도는 틱
   수만 바꾸므로, 결과는 속도와 상관없이 같다. 누산기는 한 프레임에 최대 `4 × max(1, 속도)`틱만 돌리고, 더 밀리면 남은 시간을 버린다
   (느린 기기가 따라잡으려다 더 느려지지 않게). 프레임의 dt는 0.1초로 자른다. 이펙트도 같은 게임 시각을 받는다(`nv_vfx_update`): 일시정지는
   이펙트를 멈추고 배속은 빠르게 한다.
-  - **틱 단위 이동:** `< Tick`과 `Tick >` 버튼이 일시정지하고 한 틱 뒤로 또는 앞으로 간다(배치 단계에서는 꺼짐; 앞으로는 전투 중에만).
+  - **틱 단위 이동:** 한 틱 뒤로와 한 틱 앞으로 버튼이 일시정지하고 한 틱 뒤로 또는 앞으로 간다(배치 단계에서는 꺼짐; 앞으로는 전투 중에만).
     누르고 있으면 0.4초 뒤부터 프레임마다 한 틱씩 간다(ImGui의 ButtonRepeat는 느린 프레임에서 한 번 누름이 두 번이 되어 쓰지 않는다).
     앞으로는 틱 하나를 돌리고 그 틱의 이펙트에 1/30초를 준다(전투 시각은 멈춘 채). 뒤로는 `battle_seek`가 같은 배치와 시드로 라운드를
     처음부터 그 틱까지 다시 돌린다: 규칙이 결정적이므로 그때의 상태와 같다(해시가 같다). 거꾸로 돌릴 수 없는 이펙트는 지운다. 일시정지
@@ -480,12 +490,15 @@ float는 같은 빌드 안에서 결정적이고 `sinf` 같은 libm 함수도 �
   가까운 자리, 구역 가장자리에서는 안으로 밀어 맞춘 자리다. 놓인 분대의 아무 칸이나 탭하면 그 분대를 지운다. 탭이 채울(또는 비울)
   footprint를 된다면 초록, 안 되면 빨강으로 미리 보여 준다(마우스가 가리키는 곳만; 터치 화면에는 없다). 데스크톱과 폰 모두 같다. 배치
   단계에서만.
-- **Battle 패널:** 위에서 아래로: 단계, 언어 콤보, 프로젝트(파일 이름, Open..., Reload, Save, Save as...; `abproj.md`의 "불러오기와 저장"), 접힌 Rules 절(배치 중에 규칙을 고친다; `abproj.md`의 "규칙 고치기"), 역할 필터와 고른 유닛의 역할 줄(`roles`가 선언된 파일에서만; 켠 역할을 모두 가진 유닛 종류만 버튼으로 보인다), 유닛 종류 버튼(이름, 분대가 여럿이면 그 수(`Crawler x6 (100)`), 비용; 고른 것이 밝다), Start, Retry, Reset, 속도 버튼(Pause, 0.5x, 1x, 2x, 4x), `< Tick`과 `Tick >`, 남은 공급, 팀별
-  살아 있는 유닛, 시간(초와 틱: 초는 틱 수 ÷ 30이라 느린 기기에서는 실제 시간보다 느리게 간다), (결과 단계에서) 결과와 남은 가치, 짧은 도움말. 버튼은 단계가 바뀌어도 제자리에 있다. 정의 파일을 읽지 못하면 패널은 첫 오류만 보인다. Start는 플레이어
-  유닛이 있을 때, Retry는 배치 단계가 아닐 때 켜진다. Reset은 어느 단계에서든 배치를 비운다.
+- **Battle 패널:** 자주 쓰는 것이 위, 가끔 쓰는 설정이 아래다. 위에서 아래로: 단계, 모드 버튼, 역할 필터와 고른 유닛의 역할 줄(`roles`가
+  선언된 파일에서만; 켠 역할을 모두 가진 유닛 종류만 버튼으로 보인다), 유닛 종류 버튼(이름, 분대가 여럿이면 그 수(`Crawler x6 (100)`),
+  비용; 고른 것이 밝다), Reset(어느 단계에서든 배치를 비운다), 남은 공급, 팀별 살아 있는 유닛, (결과 단계에서) 결과와 남은 가치, 프로젝트(파일
+  이름, Open..., Reload, Save, Save as...; `abproj.md`의 "불러오기와 저장"), 접힌 Rules 절(배치 중에 규칙을 고친다; `abproj.md`의 "규칙
+  고치기"), 언어 콤보, UI scale 콤보, 짧은 도움말. 정의 파일을 읽지 못하면 모드 버튼 아래에 첫 오류를 보이고 유닛 칸은 없다(프로젝트와
+  설정은 그대로 있어 다른 파일을 열 수 있다).
 - **디버그 내보내기(Debug 빌드):** `_battle_debug(n)`(0 단계, 1 틱, 2 결과, 3 아군 생존, 4 적 생존, 5 해시, 6 유닛 수, 7 포탄 수, 8 남은
-  공급, 9 정의 읽기 성공, 10 고른 유닛 종류, 11 속도 × 100; 일시정지면 0, 12 그림자 맵 크기; 없으면 0, 13 그림자 거리(m)), `_battle_debug_set_speed(speed)`(0은 일시정지), `_battle_debug_step(direction)`(+1 앞, -1 뒤; 일시정지), `_battle_debug_deploy(def, x, row)`(분대의 footprint 모서리 칸), `_battle_debug_start()`, `_battle_debug_run(ticks)`,
-  `_battle_debug_layout(region, component)`(0 뷰포트, 1 패널; 0 x, 1 y, 2 폭, 3 높이; CSS 픽셀), `_battle_debug_project(x, y, z, axis)`
+  공급, 9 정의 읽기 성공, 10 고른 유닛 종류, 11 속도 × 100; 일시정지면 0, 12 그림자 맵 크기; 없으면 0, 13 그림자 거리(m)), `_battle_debug_set_speed(speed)`(0은 일시정지), `_battle_debug_step(direction)`(+1 앞, -1 뒤; 일시정지), `_battle_debug_seek(tick)`(타임라인을 끈 것처럼 그 틱으로; 다음 프레임에 걸린다), `_battle_debug_deploy(def, x, row)`(분대의 footprint 모서리 칸), `_battle_debug_start()`, `_battle_debug_run(ticks)`,
+  `_battle_debug_layout(region, component)`(0 뷰포트, 1 패널, 2 재생 막대; 0 x, 1 y, 2 폭, 3 높이; CSS 픽셀), `_battle_debug_project(x, y, z, axis)`
   (월드 점이 화면 어디인가; 탭 시험용).
 - **역할 디버그 내보내기(Debug 빌드):** `_battle_debug(20)` 선언된 역할 수, `(21)` 역할 필터 마스크, `(22)` 그린 유닛 버튼 수, `_battle_debug_unit_roles(def)`(역할 마스크), `_battle_debug_set_role_filter(mask)`, `_battle_debug_load_test()`(페이지의 `/test.abproj`를 읽는다; 테스트가 `FS.writeFile`로 쓴다).
 - **크기:** Release의 패키지는 gzip으로 `autobattler.data` 1.18 MB(글꼴 대부분)와 `.wasm` 0.29 MB다.
@@ -543,9 +556,9 @@ A부터 `engine/tests/strings_test.mjs`(엔진 submodule의 것)가 `src/`의 �
 Playwright(Release, Debug, 데스크톱과 폰 크기, A와 B 끝마다; 손으로 돌리는 검사이고 스크립트는 저장소에 없다): `autobattler/` 페이지를
 열고 다음을 본다. 정의 파일을 읽고 적이 놓였다; 패널이 데스크톱에서는 뷰포트 오른쪽에, 폰에서는 아래에 있다; 탭으로 분대를 놓고 (footprint의 아무 칸을 탭해) 지운다;
 플레이어 구역 밖(적 구역, 가운데)의 탭은 아무것도 하지 않는다; 공급이 다하면(10분대) 열한 번째는 거절된다; 드래그가 화면을 옮기고, 휠이
-확대하고, 오른쪽 드래그가 돌린다(그 뒤에도 탭이 맞는 칸에 놓인다); 패널의 Start로 전투가 시작되고 틱이 실시간으로 가며 전투 중에는
+확대하고, 오른쪽 드래그가 돌린다(그 뒤에도 탭이 맞는 칸에 놓인다); 재생 막대가 뷰포트 아래에 뷰포트와 같은 폭으로 있고 패널, 뷰포트와 겹치지 않는다; 막대의 Start로 전투가 시작되고 틱이 실시간으로 가며 전투 중에는
 놓을 수 없다; 속도 버튼이 속도를 바꾸고 Start가 일시정지를 푼다; 일시정지는 틱을 멈추고 4x는 1x보다 2.5배 넘게, 0.5x는 0.75배 안 되게
-돈다; `Tick >`가 한 틱씩 가고 `< Tick`이 같은 해시로 돌아가며, 누르고 있으면 여러 틱을 간다; 라운드가 결과로 끝난다(속도를 바꿔 가며 돈 결과가 한 번에 돌린 결과와 해시가 같다); Retry는 같은 배치로 돌아가고 같은 배치는 같은 해시를 낸다; Reset은 배치를 비우고 비면 Start가
+돈다; 한 틱 앞으로가 한 틱씩 가고 한 틱 뒤로가 같은 해시로 돌아가며, 누르고 있으면 여러 틱을 간다; 타임라인을 끌면 그 틱으로 가고(앞뒤 모두 그 틱까지 한 번에 돌린 것과 해시가 같다), 끄는 동안은 틱이 가지 않는다; 라운드가 결과로 끝난다(속도를 바꿔 가며 돈 결과가 한 번에 돌린 결과와 해시가 같다); Retry는 같은 배치로 돌아가고 같은 배치는 같은 해시를 낸다; Reset은 배치를 비우고 비면 Start가
 아무것도 하지 않는다; 좁은 창은 패널을 아래로 옮긴다; 콘솔에 오류와 경고가 없고 assert로 멈추지 않는다. Release에서는 디버그 내보내기가
 없으므로 같은 흐름을 눈으로(화면 그림) 본다. 폰 크기에서 패널 위젯을 터치하면 탭으로 알려지기까지 몇 프레임이 걸리므로 약 2초를 기다린다.
 
@@ -1044,7 +1057,10 @@ The engine is the Git submodule `engine/`, added with `add_subdirectory(engine)`
   - In `build.yml`, Package installs `--component autobattler` into `dist/autobattler-web/release` and `.../debug`, and the publish
     jobs put them on the dashboard.
 - **Screen:** the battlefield is the viewport, with one ImGui window (the Battle panel) beside it: on its right (300 wide) on a wide
-  screen, under it (42% high) on a tall one. They do not overlap, since input that starts in the viewport skips ImGui. **UI scale:** the
+  screen, under it (42% high) on a tall one. Under the viewport, as wide as it, is the playback bar (one ImGui window; "Playback bar"):
+  left of the panel on a wide screen, between the viewport and the panel on a tall one. The three do not overlap, since input that
+  starts in the viewport skips ImGui. The bar is as tall as its rows (widgets that do not fit on a row go on to the next; counted the
+  frame before). **UI scale:** the
   UI scale combo under the language (100% to 250%, not saved) enlarges the text, the widgets and the panel's width (300 times the
   scale, at most half the screen). A desktop starts at 200%, a touch screen at the engine's own scale (1.3). The engine's `ui_scale`
   also tells a touch screen, so the game leaves it and multiplies the engine's style by a scale of its own (`Game.ui_zoom`; a change
@@ -1073,13 +1089,23 @@ The engine is the Git submodule `engine/`, added with `add_subdirectory(engine)`
     (`SHADOW_DISTANCE_PER_CAMERA_DISTANCE`). From the starting camera the field's far corners are about 1.4 times its distance away, so
     every unit is shadowed, and the map's texels keep about the same size on screen as the camera zooms. Moving or turning the view
     keeps the distance, so shadows do not shimmer. There is no settings UI.
-- **Time controls:** the game clock is real time times the speed, stopped while paused. The panel's Pause, 0.5x, 1x, 2x and 4x
-  buttons change it (the chosen one is lit; a pause keeps the speed; Start un-pauses; not saved). The rules run the same 30 Hz ticks
+- **Playback bar:** under the viewport, as in a video player. Its top row is the timeline, its bottom row the Start, Retry (Restart in
+  the lab; an icon and a word), Pause (Play while paused), one tick back and one tick forward (these three are icons alone, named by
+  a tooltip; the engine's Lucide icons, "Icons" in `engine/docs/specs/fonts.md`), 0.5x, 1x, 2x and 4x buttons. The buttons stay where they are as the phase
+  changes. Start is on in deployment when the player has a unit, Retry when not deploying.
+  - **Timeline:** a slider over the whole round (0 to Round time's ticks), with the time written in it (seconds and ticks: the seconds
+    are the tick count over 30, so on a slow device they run behind real time). Dragging or clicking it goes to that tick: forward runs
+    on from the state now to it, back is `battle_seek` playing the round again from its start (the rules are deterministic, so both
+    are the state the round had at that tick). If the round ends first it stops at its end. The ticks skipped make no effects, and the
+    effects left are cleared. While it is dragged the game clock does not run; let go, it goes on paused or not as it was. Off while
+    deploying.
+- **Time controls:** the game clock is real time times the speed, stopped while paused. The bar's Pause/Play, 0.5x, 1x, 2x and 4x
+  buttons change it (the chosen one is lit; a pause keeps the speed; a speed button and Start un-pause; not saved). The rules run the same 30 Hz ticks
   and a speed only changes how many run in a frame, so the result is the same at any speed. The accumulator runs at most
   `4 × max(1, speed)` ticks in a frame and drops the time left over beyond that (so a slow device does not slow down further trying
   to catch up). A frame's dt is cut to 0.1 s. The effects get the same game clock (`nv_vfx_update`): a pause freezes them and a
   speed-up hurries them.
-  - **Stepping a tick:** the `< Tick` and `Tick >` buttons pause and go one tick back or forward (off while deploying; forward only while
+  - **Stepping a tick:** the one-tick-back and one-tick-forward buttons pause and go one tick back or forward (off while deploying; forward only while
     fighting). Held, they go one tick a frame after 0.4 s (not ImGui's ButtonRepeat, which on a slow frame turns one click into two).
     Forward runs one tick and gives its effects 1/30 s (the battle's clock stays paused). Back is `battle_seek`, which plays the round
     again from its start with the same placement and seed up to that tick: the rules are deterministic, so it is the state the round
@@ -1090,18 +1116,18 @@ The engine is the Git submodule `engine/`, added with `add_subdirectory(engine)`
   footprint's middle is nearest the tapped point, moved in to fit at the zone's edges. A tap on any cell of a placed squad removes the
   squad. The footprint a tap would fill (or empty) previews green when it can, red when it cannot (only under the mouse pointer; a
   touch screen has no preview). The same on desktop and phone. Only while deploying.
-- **Battle panel:** top to bottom: the phase, a language combo, the project (its file name, Open..., Reload, Save, Save as...; "Loading and
-  saving" in `abproj.md`), an open Rules section (the rules edited during deployment; "Editing the rules" in `abproj.md`), a
-  a role filter (when the file declares roles; a unit type shows when it has every lit role) and the chosen unit's roles, then a button per unit type (name, the squad's size when it is more than one (`Crawler x6 (100)`), and cost; the chosen one is
-  lit), Start,
-  Retry, Reset, the speed buttons (Pause, 0.5x, 1x, 2x, 4x), `< Tick` and `Tick >`, remaining supply, living units per team, the time (seconds and ticks: the seconds are the tick count over 30, so on a slow device they run behind real time), (in the result phase) the result and the value left, a short help
-  text. The buttons stay where they are as the phase changes. When the
-  definition files could not be read the panel shows only the first error. Start is on when the player has a unit, Retry when not
-  deploying; Reset clears the placement in any phase.
+- **Battle panel:** what is used often on top, settings used now and then below. Top to bottom: the phase, the mode buttons, a role
+  filter (when the file declares roles; a unit type shows when it has every lit role) and the chosen unit's roles, a button per unit
+  type (name, the squad's size when it is more than one (`Crawler x6 (100)`), and cost; the chosen one is lit), Reset (clears the
+  placement in any phase), remaining supply, living units per team, (in the result phase) the result and the value left, the project
+  (its file name, Open..., Reload, Save, Save as...; "Loading and saving" in `abproj.md`), a closed Rules section (the rules edited
+  during deployment; "Editing the rules" in `abproj.md`), the language combo, the UI scale combo, a short help text. When the
+  definition files could not be read the first error shows under the mode buttons and there are no unit sections (the project and the
+  settings stay, so another file can be opened).
 - **Debug exports (Debug builds):** `_battle_debug(n)` (0 phase, 1 tick, 2 outcome, 3 player units alive, 4 enemy units alive, 5 hash,
   6 units, 7 shells, 8 supply left, 9 definitions loaded, 10 chosen unit type, 11 the speed × 100, 0 while paused, 12 the shadow
-  map's size, 0 without one, 13 the shadow distance in meters), `_battle_debug_set_speed(speed)` (0 pauses), `_battle_debug_step(direction)` (+1 forward, -1 back; it pauses), `_battle_debug_deploy(def, x, row)` (the squad's
-  footprint corner), `_battle_debug_start()`, `_battle_debug_run(ticks)`, `_battle_debug_layout(region, component)` (region 0 viewport, 1 panel; 0 x,
+  map's size, 0 without one, 13 the shadow distance in meters), `_battle_debug_set_speed(speed)` (0 pauses), `_battle_debug_step(direction)` (+1 forward, -1 back; it pauses), `_battle_debug_seek(tick)` (to that tick as the timeline goes; taken by the next frame), `_battle_debug_deploy(def, x, row)` (the squad's
+  footprint corner), `_battle_debug_start()`, `_battle_debug_run(ticks)`, `_battle_debug_layout(region, component)` (region 0 viewport, 1 panel, 2 playback bar; 0 x,
   1 y, 2 width, 3 height; CSS pixels) and `_battle_debug_project(x, y, z, axis)` (where a world point is on screen, for tap tests).
 - **Role debug exports (Debug builds):** `_battle_debug(20)` declared roles, `(21)` the role filter mask, `(22)` unit buttons drawn, `_battle_debug_unit_roles(def)` (the role mask), `_battle_debug_set_role_filter(mask)`, `_battle_debug_load_test()` (reads `/test.abproj` from the page; a test writes it with `FS.writeFile`).
 - **Size:** the Release package is, gzipped, `autobattler.data` 1.18 MB (mostly the font) and the `.wasm` 0.29 MB.
@@ -1163,9 +1189,10 @@ Playwright (Release and Debug, desktop and phone sizes, at the end of A and of B
 `autobattler/` page and check: the definition files are read and the enemy is placed; the panel is right of the viewport on desktop and
 under it on a phone; taps place squads and remove them (a tap on any cell of the footprint); taps outside the player's zone (the enemy's zone, the middle) do nothing; when the supply
 runs out (10 squads) an eleventh is refused; a drag moves the view, the wheel zooms and a right drag turns it (taps still land on the right cell
-after); Start in the panel starts the fight, ticks advance in real time and nothing can be placed during it; the speed buttons set the speed and Start un-pauses; a pause stops the ticks, 4x runs more
-than 2.5 times as many as 1x and 0.5x less than 0.75 times; `Tick >` goes one tick at a time and `< Tick` comes back to the same hash, and holding it
-goes back several ticks; the round ends in a result (run at changing speeds, it gives the same hash
+after); the playback bar is under the viewport, as wide as it, overlapping neither it nor the panel; Start in the bar starts the fight, ticks advance in real time and nothing can be placed during it; the speed buttons set the speed and Start un-pauses; a pause stops the ticks, 4x runs more
+than 2.5 times as many as 1x and 0.5x less than 0.75 times; one tick forward goes one tick at a time and one tick back comes back to the same hash, and holding it
+goes back several ticks; dragging the timeline goes to that tick (forward and back, the same hash as a run to it at once), and
+no tick runs while it is dragged; the round ends in a result (run at changing speeds, it gives the same hash
 as a run at once);
 Retry goes back to the same placement and the same placement gives the same hash; Reset clears the placement and Start with none does
 nothing; a narrow window moves the panel under the viewport; no console errors or warnings and no assert stops it. The Release build has
