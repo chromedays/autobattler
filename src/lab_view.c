@@ -130,11 +130,11 @@ void lab_view_draw(Game* game)
     }
 }
 
-// Where a world point is on the canvas, in CSS pixels (ImGui's), as the camera is placed now. Fails behind the camera or
-// outside the viewport.
+// Where a world point is on the canvas, in CSS pixels (ImGui's), as the camera is placed now. Fails behind the camera. A point
+// outside the viewport is still given: what is drawn there is under the panel or off the canvas.
 typedef struct ScreenPoint {
     b32 ok;
-    f32 x, y;
+    ImVec2_c point;
 } ScreenPoint;
 
 internal ScreenPoint screen_point(Game* game, NvVec3 point)
@@ -150,31 +150,66 @@ internal ScreenPoint screen_point(Game* game, NvVec3 point)
     f32 ratio = nv_window_pixel_ratio(&game->window);
     f32 x = (f32)out->image.x + (clip.x / w * 0.5f + 0.5f) * (f32)out->width * out->pixel_width;
     f32 y = (f32)out->image.y + (0.5f - clip.y / w * 0.5f) * (f32)out->height * out->pixel_height;
-    const NvRect* viewport = &game->layout.viewport;
-    if (x < (f32)viewport->x || y < (f32)viewport->y || x >= (f32)(viewport->x + viewport->width) || y >= (f32)(viewport->y + viewport->height))
-        return (ScreenPoint){0};
-    return (ScreenPoint){.ok = true, .x = x / ratio, .y = y / ratio};
+    return (ScreenPoint){.ok = true, .point = {x / ratio, y / ratio}};
 }
 
-// Text beside the middle of the air target's line to the ground: its height. Drawn after the camera is placed for the frame
-// (view_update), behind the panel.
-void lab_view_labels(Game* game)
+#define DIMENSION_COLOR     0xFFC8C8D2u
+#define DIMENSION_THICKNESS 1.5f
+#define DIMENSION_CAP       6.0f // pixels to each side of the line at its ends
+#define DIMENSION_GAP_PAD   4.0f // pixels between the text and the line on either side of it
+
+// A dimension line from the ground up to an air unit, as a drawing has one: a cap across each end and its height written
+// in a gap in the middle, |-----10.0 m-----|. When the line is too short on screen for the text, the text goes beside it.
+internal void draw_height_dimension(Game* game, ImDrawList* draw, NvVec3 top)
 {
-    const Unit* target = &game->lab.battle.units[LAB_SLOT_AIR];
-    if (target->flags & UNIT_DEAD || game->unit_nodes_made < LAB_SLOT_AIR)
+    ScreenPoint low = screen_point(game, nv_vec3(top.x, 0.0f, top.z)), high = screen_point(game, top);
+    if (!low.ok || !high.ok)
         return;
-    NvVec3 top = nv_scene_get(game->scene, game->unit_nodes[LAB_SLOT_AIR])->position; // where it is drawn, between ticks
-    ScreenPoint middle = screen_point(game, nv_vec3(top.x, top.y * 0.5f, top.z));
-    if (!middle.ok)
+    ImVec2_c a = low.point, b = high.point;
+    f32 dx = b.x - a.x, dy = b.y - a.y, length = sqrtf(dx * dx + dy * dy);
+    if (length < 1.0f)
         return;
+    ImVec2_c along = {dx / length, dy / length}, across = {-along.y, along.x};
+    for (u32 end = 0; end < 2; ++end) {
+        ImVec2_c p = end ? b : a;
+        ImDrawList_AddLine(draw, (ImVec2_c){p.x - across.x * DIMENSION_CAP, p.y - across.y * DIMENSION_CAP},
+                           (ImVec2_c){p.x + across.x * DIMENSION_CAP, p.y + across.y * DIMENSION_CAP}, DIMENSION_COLOR, DIMENSION_THICKNESS);
+    }
+
     char text[32];
     snprintf(text, sizeof(text), T("%.1f m"), top.y);
-    ImDrawList* draw = igGetBackgroundDrawList(NULL);
     ImVec2_c size = igCalcTextSize(text, NULL, false, -1.0f);
-    ImVec2_c pos = {middle.x + 8.0f, middle.y - size.y * 0.5f};
-    ImDrawList_AddRectFilled(draw, (ImVec2_c){pos.x - 3.0f, pos.y - 1.0f}, (ImVec2_c){pos.x + size.x + 3.0f, pos.y + size.y + 1.0f},
-                             0x99000000u, 3.0f, 0);
-    ImDrawList_AddText_Vec2(draw, pos, 0xFFDDDDE6u, text, NULL);
+    ImVec2_c middle = {(a.x + b.x) * 0.5f, (a.y + b.y) * 0.5f};
+    // How far the text's box reaches along the line from its middle.
+    f32 half_gap = (fabsf(along.x) * size.x + fabsf(along.y) * size.y) * 0.5f + DIMENSION_GAP_PAD;
+    ImVec2_c text_pos;
+    if (length > 2.0f * half_gap + 2.0f * DIMENSION_CAP) {
+        ImDrawList_AddLine(draw, a, (ImVec2_c){middle.x - along.x * half_gap, middle.y - along.y * half_gap}, DIMENSION_COLOR,
+                           DIMENSION_THICKNESS);
+        ImDrawList_AddLine(draw, (ImVec2_c){middle.x + along.x * half_gap, middle.y + along.y * half_gap}, b, DIMENSION_COLOR,
+                           DIMENSION_THICKNESS);
+        text_pos = (ImVec2_c){middle.x - size.x * 0.5f, middle.y - size.y * 0.5f};
+    } else {
+        ImDrawList_AddLine(draw, a, b, DIMENSION_COLOR, DIMENSION_THICKNESS);
+        text_pos = (ImVec2_c){middle.x + DIMENSION_CAP + DIMENSION_GAP_PAD, middle.y - size.y * 0.5f};
+    }
+    ImDrawList_AddRectFilled(draw, (ImVec2_c){text_pos.x - 3.0f, text_pos.y - 1.0f},
+                             (ImVec2_c){text_pos.x + size.x + 3.0f, text_pos.y + size.y + 1.0f}, 0x99000000u, 3.0f, 0);
+    ImDrawList_AddText_Vec2(draw, text_pos, 0xFFE6E6EEu, text, NULL);
+}
+
+// The height of each air unit of the lab (the air target, and the unit when it flies) as a dimension line. Drawn after the
+// camera is placed for the frame (view_update), behind the panel.
+void lab_view_labels(Game* game)
+{
+    const Battle* battle = &game->lab.battle;
+    ImDrawList* draw = igGetBackgroundDrawList(NULL);
+    for (u32 slot = 1; slot <= battle->unit_count && slot <= game->unit_nodes_made; ++slot) {
+        const Unit* unit = &battle->units[slot];
+        if ((unit->flags & UNIT_DEAD) || battle->defs->units[unit->def].layer != UNIT_LAYER_AIR)
+            continue;
+        draw_height_dimension(game, draw, nv_scene_get(game->scene, game->unit_nodes[slot])->position); // as drawn, between ticks
+    }
 }
 
 // The panel

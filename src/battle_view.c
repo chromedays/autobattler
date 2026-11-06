@@ -483,8 +483,8 @@ void view_update(Game* game, f32 game_dt)
                                   lerp(unit->previous_position.z, unit->position.z, alpha));
         node->position = position;
         node->rotation = nv_quat_axis_angle(nv_vec3(0.0f, 1.0f, 0.0f), lerp_angle(unit->previous_yaw, unit->yaw, alpha));
-        // A flier's shadow-like line down to the ground, so its height reads.
-        if (alive && def->layer == UNIT_LAYER_AIR)
+        // A flier's shadow-like line down to the ground, so its height reads (the lab draws a dimension line instead).
+        if (alive && def->layer == UNIT_LAYER_AIR && !lab)
             nv_renderer_debug_line(renderer, nv_vec3(position.x, 0.0f, position.z), position, nv_vec3(0.35f, 0.35f, 0.4f));
         if (!alive)
             continue;
