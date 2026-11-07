@@ -7,7 +7,7 @@
 //     head:  { sha, subject, date } | null,   the newest commit GitHub told of
 //     ci:    "running" | "passed" | "failed" | null,   the build workflow on that commit
 //     pr:    { number, title, state: "open" | "merged" | "closed" } | null,   the branch's newest pull request
-//     build: { sha, subject, date, release, debug, stored, ahead } | null,   what CI uploaded (sizes in bytes)
+//     build: { sha, subject, date, release, stored, ahead } | null,   what CI uploaded (sizes in bytes)
 //   } },
 //   activity: [{ id, at, kind, branch, number?, title?, sha?, subject? }],   newest last, ACTIVITY_KEEP at most
 //   nextId,
@@ -135,13 +135,14 @@ export function applyBuild(state, record) {
   const text = (v) => typeof v === 'string' && v.length > 0 && v.length < 1000;
   const size = (v) => Number.isSafeInteger(v) && v >= 0;
   if (!text(record.branch) || !/^[0-9a-f]{40}$/.test(record.sha) || !text(record.date)
-      || !size(record.release) || !size(record.debug) || !size(record.stored)
+      || !size(record.release) || !size(record.stored)
       || !(record.ahead === null || size(record.ahead)) || !(record.subject === null || text(record.subject))) {
     throw new Error('malformed build record');
   }
   const b = branchOf(state, record.branch);
-  const { sha, subject, date, release, debug, stored, ahead } = record;
-  b.build = { sha, subject, date, release, debug, stored, ahead: b.pr && b.pr.state === 'merged' ? 0 : ahead };
+  // A record from before 2026-11-06 also had a Debug build's size; there is none now.
+  const { sha, subject, date, release, stored, ahead } = record;
+  b.build = { sha, subject, date, release, stored, ahead: b.pr && b.pr.state === 'merged' ? 0 : ahead };
   if (!b.head) b.head = { sha, subject, date };
   if (b.head.sha === sha) {
     if (!b.head.subject) b.head.subject = subject;

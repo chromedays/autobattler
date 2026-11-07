@@ -1,12 +1,13 @@
 # 빌드 대시보드
 
-상태: 구현됨, 배포 전 (2026-10-28). Cloudflare 계정과 비밀값(`tools/dashboard/README.md`)이 준비되면 쓴다. 이 스펙의 변경은 먼저 합의한다.
+상태: 구현됨 (2026-10-28), 배포됨. 2026-11-06에 Debug 빌드를 빼고, Release 빌드 하나를 게임과 에디터 둘로 연다("게임과 에디터" 절).
+이 스펙의 변경은 먼저 합의한다.
 2026-10-29에 엔진 저장소(`chromedays/engine`)에서 오토배틀러와 함께 이 저장소(`chromedays/autobattler`)로 옮겼다. Worker의 `REPO`가
 이 저장소다.
 
 ## 목표
 
-master와 PR(풀 리퀘스트)이 열린 브랜치마다 오토배틀러의 Release·Debug 빌드를 한 페이지에서 열 수 있게 한다. PR이 열리고 닫히고
+master와 PR(풀 리퀘스트)이 열린 브랜치마다 오토배틀러의 Release 빌드를 한 페이지에서 게임이나 에디터로 열 수 있게 한다. PR이 열리고 닫히고
 머지되거나, 커밋이 push되거나, CI가 끝나면 열려 있는 페이지에 몇 초 안에 나타난다. 새로고침은 필요 없다.
 
 GitHub Pages로는 할 수 없다. Pages는 파일만 내주므로 웹훅을 받거나 열린 페이지로 변경을 보낼 수 없고, 사이트가 1 GB를 넘을 수
@@ -37,7 +38,7 @@ CI(build.yml) ──R2에 업로드, 빌드 기록 POST────────�
 | `POST /webhook` | GitHub 웹훅. `X-Hub-Signature-256`(`GITHUB_WEBHOOK_SECRET`의 HMAC-SHA256)이 맞지 않으면 401 |
 | `POST /api/builds` | CI의 빌드 기록. `Authorization: Bearer <DASHBOARD_TOKEN>`이 아니면 401, 형식이 틀리면 400 |
 | `GET /api/state` | 페이지가 받는 상태(JSON). 확인용 |
-| `GET /builds/<폴더>/<release\|debug>/<파일>` | R2의 `builds/...` 객체. `/`로 끝나면 `index.html`. 끝에 `/`가 없는 폴더는 301 |
+| `GET /builds/<폴더>/release/<파일>` | R2의 `builds/...` 객체. `/`로 끝나면 `index.html`. 끝에 `/`가 없는 폴더는 301 |
 
 빌드 파일 이름에는 해시가 없으므로 모든 응답이 `Cache-Control: no-cache`와 ETag를 보낸다. 바뀌지 않은 파일은 304로 끝난다.
 페이지 로딩의 매니페스트(`docs/specs/page_loading.md`)는 그대로 동작한다(`?v=` 쿼리는 무시한다).
@@ -53,7 +54,7 @@ Durable Object가 저장소(`state` 키 하나)에 둔다. 브랜치마다:
 | `head` | GitHub가 알려 준 가장 새 커밋(`sha`, 첫 줄 `subject`, `date`) | push, PR 열림(처음일 때), 재동기화 |
 | `ci` | 그 커밋의 `build` 워크플로: `running`, `passed`, `failed`, 없음 | push(`running`), `workflow_run`, 빌드 기록(`passed`), 재동기화 |
 | `pr` | 브랜치의 가장 새 PR(번호가 가장 큰 것): `number`, `title`, `state`(`open`, `merged`, `closed`) | `pull_request`, 재동기화 |
-| `build` | CI가 올린 빌드: `sha`, `subject`, `date`, `release`·`debug`(내려받는 바이트, DWARF 제외), `stored`(폴더 전체 바이트), `ahead`(master에 없는 커밋 수) | 빌드 기록. PR이 머지되면 `ahead`가 0 |
+| `build` | CI가 올린 빌드: `sha`, `subject`, `date`, `release`(내려받는 바이트), `stored`(폴더 전체 바이트; 빌드가 하나라 `release`와 같다), `ahead`(master에 없는 커밋 수) | 빌드 기록. PR이 머지되면 `ahead`가 0 |
 
 - 페이지에는 master와 PR이 있는 브랜치만 보낸다. PR이 없는 브랜치도 따라가기는 한다(PR이 열리면 바로 보이도록).
 - 포크의 PR은 무시한다. 포크의 코드는 비밀값과 함께 돌지 않으므로 빌드도 없다.
@@ -69,6 +70,7 @@ Durable Object가 저장소(`state` 키 하나)에 둔다. 브랜치마다:
 
 목업과 같다. 위에서부터: 헤더(실시간 표시, EN/한국어), 빌드 그리드(master를 맨 앞에 고정, 그다음 PR 카드), 활동, 저장 공간, 출처.
 
+- 카드의 버튼은 **Game**(내려받는 크기와 함께)과 **Editor** 둘이다("게임과 에디터" 절).
 - 카드 제목은 PR 번호와 제목(PR로 가는 링크), 그 아래 작은 글씨로 브랜치 이름. master는 이름이 제목이고 아래에 "기본 브랜치".
 - 표시: CI(통과, 실패, 빌드 중), PR(열림, 머지됨, 닫힘), master에 있음 또는 master에 없는 커밋 수.
 - 새 커밋이 빌드 중이거나 실패하면 마지막 빌드를 그대로 두고 그 사실을 적는다. 빌드가 아직 없으면 "아직 빌드 없음".
@@ -80,13 +82,31 @@ Durable Object가 저장소(`state` 키 하나)에 둔다. 브랜치마다:
   상태로 놓친 것을 따라잡는다. 세 번 실패하면 "실시간 갱신 중지"와 마지막 상태의 시각을 보여 준다.
 - 저장 공간: 빌드 기록의 `stored` 합을 R2 무료 10 GB에 대어 보여 준다.
 
+## 게임과 에디터
+
+결정(2026-11-06): 대시보드는 Release 빌드 하나만 올리고, 그것을 두 가지로 연다. Debug 빌드는 잘 열어 보지 않아서 대시보드에서 뺐다.
+CI는 Debug를 그대로 빌드하고 ctest를 돌리고(`NV_ASSERT`), 아티팩트 `autobattler-web`에도 `debug/`가 남는다. Debug로 볼 일은 로컬
+빌드(`just web Debug`)나 그 아티팩트로 한다.
+
+| 버튼 | 주소 | 여는 것 |
+|---|---|---|
+| Game | `/builds/<폴더>/release/` | 게임: 메인 메뉴부터(`docs/specs/main_menu.md`) |
+| Editor | `/builds/<폴더>/release/?editor` | 에디터: 지금까지의 오토배틀러처럼 바로 배치 단계의 전장과 Battle 패널, 재생 막대 |
+
+- 두 버튼은 같은 파일을 연다. 시작 화면만 페이지 주소의 `editor` 옵션이 정한다(게임이 읽는다; `main_menu.md`의 "GAME과 EDITOR").
+  그래서 저장 공간과 CI 시간이 늘지 않고, 하나를 연 뒤 다른 하나는 브라우저 캐시에서 온다. 크기는 Game 버튼에만 쓴다.
+- 메인 메뉴가 만들어지기 전의 빌드에서는 둘이 같은 화면을 연다(옵션을 읽는 코드가 없다).
+- **옮기기:** 2026-11-06 전의 빌드 기록에는 `debug` 크기가 있고, R2의 폴더에는 `debug/`가 있다. 새 기록은 `debug`를 받지 않고 버린다(`publish.sh`는 master의 Worker가 바뀔 때까지 옛 Worker가 거절하지 않도록 `debug: 0`을 보낸다).
+  Worker는 빌드 기록을 받을 때마다 그 브랜치 폴더의 `debug/`를 지운다(없으면 목록 한 번). 그래서 브랜치마다 다음 빌드에서 옛 Debug가
+  빠진다. 그 전까지 옛 기록의 `stored`는 Debug를 포함한 값이다.
+
 ## CI
 
 `.github/workflows/build.yml`:
 
 - `publish`: 이 저장소의 push와 손으로 시작한 실행(Run workflow)마다 `web` 뒤에 돈다. Re-run은 push 이벤트를 그때 그대로 다시 쓰므로(기본
   브랜치도) 빌드를 다시 올리려면 Run workflow를 쓴다. master이거나 열린 PR이 있는 브랜치면 그 실행의 `autobattler-web` 아티팩트에서
-  `release`와 `debug`를 `publish.sh`로 올린다.
+  `release`만 `publish.sh`로 올린다(아티팩트의 `debug`는 올리지 않는다).
 - `publish-opened`: PR이 열리거나 다시 열리면(이 저장소의 브랜치일 때만) 그 head 커밋의 push 실행을 찾아(아직 돌면 기다려서) 그
   아티팩트를 올린다. 다시 빌드하지 않는다. push 실행의 `publish`도 올릴 수 있지만 같은 파일이라 문제없다.
 - 비밀값이 없으면 두 잡 모두 알림만 남기고 성공한다. 그래서 설정 전에도 CI는 초록이다.

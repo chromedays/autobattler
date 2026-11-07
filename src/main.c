@@ -1,6 +1,7 @@
 // The auto-battler executable (docs/specs/battle.md, "Executable"): it sets up the window, GPU, renderer and UI, reads the
-// project file, and runs the frame: the battle, or the unit lab (docs/specs/unit_lab.md), ticks at a fixed 30 Hz inside it,
-// and the view (battle_view.c, lab_view.c) draws whatever state the ticks leave.
+// project file, and runs the frame: the main menu over its own round (docs/specs/main_menu.md, menu_view.c), or the game: the
+// battle, or the unit lab (docs/specs/unit_lab.md), ticks at a fixed 30 Hz inside it, and the view (battle_view.c, lab_view.c)
+// draws whatever state the ticks leave. --editor (?editor on the web) starts in the game, with no menu.
 
 #include "game.h"
 
@@ -52,7 +53,11 @@ void game_layout(Game* game)
 {
     f32 ratio = nv_window_pixel_ratio(&game->window);
     f32 width_css = (f32)game->gpu.width / ratio, height_css = (f32)game->gpu.height / ratio;
-    if (width_css >= height_css * 1.1f) {
+    if (game->screen == GAME_SCREEN_MENU) {
+        // The menu is drawn over the whole field; it has no panel or bar.
+        game->layout.viewport = nv_window_framebuffer_rect_from_css(0.0f, 0.0f, width_css, height_css, ratio);
+        game->layout.bar = game->layout.panel = (NvRect){0};
+    } else if (width_css >= height_css * 1.1f) {
         f32 panel_width_css = fminf(PANEL_WIDTH * game_ui_scale(game), width_css * 0.5f);
         f32 view_width_css = width_css - panel_width_css;
         f32 view_height_css = height_css - bar_height(game, height_css);
@@ -88,7 +93,65 @@ internal void set_message(Game* game, b32 bad, const char* format, ...)
 
 Battle* game_shown_battle(Game* game)
 {
+    if (game->screen == GAME_SCREEN_MENU)
+        return &game->menu_battle;
     return game->mode == GAME_MODE_LAB ? &game->lab.battle : &game->battle;
+}
+
+// The change itself, halfway through the fade (or at once for the debug exports).
+internal void switch_screen(Game* game, GameScreen screen)
+{
+    if (screen == GAME_SCREEN_MENU) {
+        // A running round goes back to deployment with its placement; the lab's run is dropped and its settings kept.
+        if (game->battle.phase != BATTLE_DEPLOY)
+            battle_retry(&game->battle);
+        game->mode = GAME_MODE_BATTLE;
+        game->screen = screen;
+        game->hover_shown = false;
+        menu_view_start(game);
+    } else {
+        game->screen = screen;
+        view_restart_camera(game); // the battle's first camera; it clears the effects
+    }
+    game->accumulator = 0.0f;
+}
+
+void game_set_screen(Game* game, GameScreen screen)
+{
+    if (game->editor || game->fade > 0.0f || screen == game->screen)
+        return;
+    game->fade_to = screen;
+    game->fade = 1e-6f; // running
+}
+
+// The fade (and the screen's change halfway), every frame before the UI is built.
+internal void update_fade(Game* game, f32 dt)
+{
+    if (game->fade <= 0.0f)
+        return;
+    game->fade += dt;
+    if (game->fade >= SCREEN_FADE_SECONDS * 0.5f && game->screen != game->fade_to)
+        switch_screen(game, game->fade_to);
+    if (game->fade >= SCREEN_FADE_SECONDS)
+        game->fade = 0.0f;
+}
+
+// Black over everything, darkest halfway, and a window on top of the others that takes the input while it lasts.
+internal void draw_fade(Game* game)
+{
+    if (game->fade <= 0.0f)
+        return;
+    f32 half = SCREEN_FADE_SECONDS * 0.5f;
+    f32 alpha = game->fade < half ? game->fade / half : (SCREEN_FADE_SECONDS - game->fade) / half;
+    ImVec2_c size = igGetIO_Nil()->DisplaySize;
+    igSetNextWindowPos((ImVec2_c){0.0f, 0.0f}, ImGuiCond_Always, (ImVec2_c){0.0f, 0.0f});
+    igSetNextWindowSize(size, ImGuiCond_Always);
+    igSetNextWindowFocus();
+    igBegin("##fade", NULL, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoBackground | ImGuiWindowFlags_NoSavedSettings |
+                                ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoNav);
+    igEnd();
+    ImDrawList_AddRectFilled(igGetForegroundDrawList_ViewportPtr(NULL), (ImVec2_c){0.0f, 0.0f}, size,
+                             igGetColorU32_Vec4((ImVec4_c){0.0f, 0.0f, 0.0f, nv_clamp_f32(alpha, 0.0f, 1.0f)}), 0.0f, 0);
 }
 
 // A run of the lab over, with the settings it has (made for this project's first unit when it has none yet).
@@ -180,6 +243,8 @@ b32 game_load_project(Game* game, const char* name, const char* text, umm size)
         set_message(game, true, T("%s has %u error(s), so the project in use stays. The first: %s"), name, next->error_count,
                     next->first_error);
     }
+    if (game->screen == GAME_SCREEN_MENU && (ok || !game->defs_ok))
+        menu_view_start(game); // the menu's round is made from the project in place
     game->scratch.used = mark;
     return ok;
 }
@@ -296,6 +361,8 @@ internal void load_built_in_project(Game* game)
         defs->rules = fallback_rules;
         snprintf(game->project_name, sizeof(game->project_name), PROJECT_BUILT_IN);
         view_apply_project(game);
+        if (game->screen == GAME_SCREEN_MENU)
+            menu_view_start(game); // the bare ground behind the menu
     }
     game->scratch.used = mark;
 }
@@ -341,35 +408,12 @@ internal void poll_local_file(Game* game)
     }
 }
 
-internal void frame(void* userdata)
+// The game clock, for the battle or the lab on the game screen: real time times the speed, stopped while paused. The battle
+// runs it in whole ticks, so a speed only changes how many ticks a frame runs (the result is the same at any speed); what is left
+// over decides where between two ticks the view draws. The effects follow the same clock, so their dt is returned. It stands
+// still while the timeline is dragged.
+internal f32 run_game_clock(Game* game, f32 dt)
 {
-    Game* game = userdata;
-    nv_debug_script_update();
-    nv_log_pump();
-    f64 now = nv_time_seconds();
-    f32 dt = (f32)(now - game->last_time);
-    game->last_time = now;
-    if (dt > 0.1f)
-        dt = 0.1f; // a hidden tab's long pause is not caught up on
-
-    NvGpuFrame gpu_frame = nv_gpu_begin_frame(&game->gpu);
-    if (!gpu_frame.ok)
-        return;
-    NvGpuView target = gpu_frame.view;
-    if (game->ui_zoom_wanted != game->ui_zoom)
-        apply_ui_zoom(game, game->ui_zoom_wanted); // between frames: ImGui's style may not change inside one
-    game_layout(game);
-    game->imgui.view_rect = game->layout.viewport;
-    nv_imgui_new_frame(&game->imgui, dt);
-    poll_local_file(game);
-    view_draw_build_label(game);
-    view_panel(game);
-    view_bar(game);
-    view_input(game);
-
-    // The game clock: real time times the speed, stopped while paused. The battle runs it in whole ticks, so a speed only
-    // changes how many ticks a frame runs (the result is the same at any speed); what is left over decides where between
-    // two ticks the view draws. The effects follow the same clock. It stands still while the timeline is dragged.
     f32 game_dt = game->paused || game->scrubbing ? 0.0f : dt * game->speed;
     f32 effects_dt = game_dt;
     Battle* battle = game_shown_battle(game);
@@ -419,7 +463,62 @@ internal void frame(void* userdata)
     } else {
         game->accumulator = 0.0f;
     }
+    return effects_dt;
+}
+
+internal void frame(void* userdata)
+{
+    Game* game = userdata;
+    nv_debug_script_update();
+    nv_log_pump();
+    f64 now = nv_time_seconds();
+    f32 dt = (f32)(now - game->last_time);
+    game->last_time = now;
+    if (dt > 0.1f)
+        dt = 0.1f; // a hidden tab's long pause is not caught up on
+
+    NvGpuFrame gpu_frame = nv_gpu_begin_frame(&game->gpu);
+    if (!gpu_frame.ok)
+        return;
+    NvGpuView target = gpu_frame.view;
+    if (game->ui_zoom_wanted != game->ui_zoom)
+        apply_ui_zoom(game, game->ui_zoom_wanted); // between frames: ImGui's style may not change inside one
+    update_fade(game, dt);
+    b32 menu = game->screen == GAME_SCREEN_MENU;
+    game_layout(game);
+    // On the menu (and during a fade) no input goes to the camera: it all goes to the menu's window. The keyboard moves
+    // between the menu's buttons; on the game screen it does not move between the panel's widgets.
+    game->imgui.view_rect = menu || game->fade > 0.0f ? (NvRect){0} : game->layout.viewport;
+    ImGuiIO* io = igGetIO_Nil();
+    if (menu)
+        io->ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
+    else
+        io->ConfigFlags &= ~ImGuiConfigFlags_NavEnableKeyboard;
+    nv_imgui_new_frame(&game->imgui, dt);
+    poll_local_file(game);
+    view_draw_build_label(game);
+    if (menu) {
+        menu_view_window(game);
+    } else {
+        view_panel(game);
+        view_bar(game);
+        view_input(game);
+        // Esc goes back to the menu, unless a text field takes it (it cancels the edit) or this is the editor start.
+        if (!game->editor && !io->WantTextInput && igIsKeyPressed_Bool(ImGuiKey_Escape, false))
+            game_set_screen(game, GAME_SCREEN_MENU);
+    }
+
+    // The menu's round runs at 1x on real time, whatever the game's clock says; the game's battle waits.
+    f32 effects_dt = dt;
+    if (menu) {
+        menu_view_tick(game, dt);
+        game->step = 0;
+        game->seek_wanted = false;
+    } else {
+        effects_dt = run_game_clock(game, dt);
+    }
     view_update(game, effects_dt);
+    draw_fade(game);
 
     nv_renderer_draw(&game->renderer, game->scene, NULL, game->layout.scene, target);
     nv_imgui_render(&game->imgui, target);
@@ -574,11 +673,13 @@ NV_DEBUG_EXPORT void battle_debug_run(int ticks)
     }
 }
 
-// A region's rectangle in CSS pixels: region 0 the viewport, 1 the panel, 2 the playback bar; component 0 x, 1 y, 2 width,
-// 3 height.
+// A region's rectangle in CSS pixels: region 0 the viewport, 1 the panel, 2 the playback bar, 3 the main menu's buttons (as drawn
+// last frame); component 0 x, 1 y, 2 width, 3 height.
 NV_DEBUG_EXPORT float battle_debug_layout(int region, int component)
 {
     const Game* game = &game_state;
+    if (region == 3)
+        return game->menu_buttons[component & 3];
     f32 ratio = nv_window_pixel_ratio(&game->window);
     const NvRect* r = region == 2 ? &game->layout.bar : region ? &game->layout.panel : &game->layout.viewport;
     f32 values[4] = {(f32)r->x / ratio, (f32)r->y / ratio, (f32)r->width / ratio, (f32)r->height / ratio};
@@ -629,6 +730,39 @@ NV_DEBUG_EXPORT int battle_debug_lab(int which)
     case 14: return (int)game_state.lab_hidden;
     default: return lab->changes_full;
     }
+}
+
+// The main menu, for tests (docs/specs/main_menu.md, "Debug exports"). Module._battle_debug_menu(n): 0 the screen (0 the menu,
+// 1 the game), 1 the menu round's tick, 2 its units, 3 how many times it started, 4 whether a fade runs, 5 the menu buttons drawn
+// last frame, 6 whether this is the editor start.
+NV_DEBUG_EXPORT int battle_debug_menu(int which)
+{
+    const Game* game = &game_state;
+    switch (which) {
+    case 0: return (int)game->screen;
+    case 1: return (int)game->menu_battle.tick;
+    case 2: return (int)game->menu_battle.unit_count;
+    case 3: return (int)game->menu_starts;
+    case 4: return game->fade > 0.0f;
+    case 5: return (int)game->menu_buttons_shown;
+    default: return game->editor;
+    }
+}
+
+// Presses a menu button: 0 Start Game, 1 Quit, 2 the panel's Main menu (from the game). The fade is skipped, so the next frame
+// shows the other screen. 0 when that button is not shown now (none is in the editor start).
+NV_DEBUG_EXPORT int battle_debug_menu_action(int action)
+{
+    Game* game = &game_state;
+    GameScreen shown = action == 2 ? GAME_SCREEN_PLAY : GAME_SCREEN_MENU;
+    if (game->editor || game->screen != shown || (u32)action > 2)
+        return 0;
+    game->fade = 0.0f;
+    if (action == 1)
+        nv_quit();
+    else
+        switch_screen(game, action == 0 ? GAME_SCREEN_PLAY : GAME_SCREEN_MENU);
+    return 1;
 }
 
 // Asks for the UI's scale in hundredths as the panel's UI scale combo does; it is taken at the start of the next frame.
@@ -734,6 +868,8 @@ internal const NvDebugCall battle_debug_calls[] = {
     {"lab_run", "i>v", (void*)battle_debug_lab_run},
     {"set_unit_value", "ii>i", (void*)battle_debug_set_unit_value},
     {"set_ui_zoom", "i>v", (void*)battle_debug_set_ui_zoom},
+    {"menu", "i>i", (void*)battle_debug_menu},
+    {"menu_action", "i>i", (void*)battle_debug_menu_action},
 };
 
 internal NvRect debug_script_viewport(void* user)
@@ -742,9 +878,15 @@ internal NvRect debug_script_viewport(void* user)
 }
 #endif
 
-int main(void)
+int main(int argc, char** argv)
 {
     Game* game = &game_state;
+    // The editor start (docs/specs/main_menu.md, "GAME and EDITOR"): --editor on the command line, ?editor in the page's address
+    // (the engine's page makes its options the arguments).
+    for (int i = 1; i < argc; ++i)
+        game->editor = game->editor || strcmp(argv[i], "--editor") == 0;
+    game->screen = game->editor ? GAME_SCREEN_PLAY : GAME_SCREEN_MENU;
+    game->menu_yaw = NV_PI; // the menu's camera starts behind the player's side, as the battle's does
     nv_arena_init(&game->permanent, permanent_memory, sizeof(permanent_memory));
     nv_arena_init(&game->scratch, scratch_memory, sizeof(scratch_memory));
     game_strings_init();

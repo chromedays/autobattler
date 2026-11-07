@@ -480,10 +480,13 @@ void view_update(Game* game, f32 game_dt)
 {
     const Battle* battle = game_shown_battle(game);
     b32 lab = game->mode == GAME_MODE_LAB;
+    // The main menu's round (docs/specs/main_menu.md): no zones, grid or health bars, and the game's pause does not hold it.
+    b32 menu = game->screen == GAME_SCREEN_MENU;
     NvRenderer* renderer = &game->renderer;
     NvNode* camera = nv_scene_get(game->scene, game->camera);
     // Between the last two ticks while it runs; paused (and stepping), exactly at the last tick.
-    f32 alpha = battle->phase == BATTLE_FIGHT && !game->paused ? nv_clamp_f32(game->accumulator / BATTLE_TICK_SECONDS, 0.0f, 1.0f) : 1.0f;
+    b32 running = battle->phase == BATTLE_FIGHT && (menu || !game->paused);
+    f32 alpha = running ? nv_clamp_f32(game->accumulator / BATTLE_TICK_SECONDS, 0.0f, 1.0f) : 1.0f;
     NvVec3 screen_right = nv_quat_rotate(camera->rotation, nv_vec3(1.0f, 0.0f, 0.0f));
     if (lab)
         lab_view_draw(game); // its meshes first, for the units below
@@ -509,7 +512,8 @@ void view_update(Game* game, f32 game_dt)
         if (!alive)
             continue;
         if (battle->phase != BATTLE_DEPLOY) {
-            draw_health_bar(renderer, nv_vec3_add(position, nv_vec3(0.0f, def->height + 0.4f, 0.0f)), screen_right, unit->health / def->hp);
+            if (!menu)
+                draw_health_bar(renderer, nv_vec3_add(position, nv_vec3(0.0f, def->height + 0.4f, 0.0f)), screen_right, unit->health / def->hp);
             if (def->shield_hp > 0.0f && unit->shield > 0.0f) {
                 // The shield is the unit's own: three rings around its body, brighter the more is left.
                 f32 share = unit->shield / def->shield_hp;
@@ -536,11 +540,11 @@ void view_update(Game* game, f32 game_dt)
     for (u32 i = battle->projectile_count; i < game->shell_nodes_made; ++i)
         nv_scene_get(game->scene, game->shell_nodes[i])->mesh = (NvMeshId){0};
 
-    // The lab has no zones.
+    // The lab and the menu have no zones.
     for (u32 field = FIELD_PLAYER_ZONE; field <= FIELD_ENEMY_ZONE; ++field)
-        nv_scene_get(game->scene, game->field_nodes[field])->mesh = lab ? (NvMeshId){0} : game->field_meshes[field];
+        nv_scene_get(game->scene, game->field_nodes[field])->mesh = lab || menu ? (NvMeshId){0} : game->field_meshes[field];
 
-    if (!lab && battle->phase == BATTLE_DEPLOY && game->defs_ok) {
+    if (!lab && !menu && battle->phase == BATTLE_DEPLOY && game->defs_ok) {
         const BattleRules* rules = &battle->defs->rules;
         draw_zone_grid(renderer, rules, 0, nv_vec3(0.25f, 0.42f, 0.75f));
         draw_zone_grid(renderer, rules, battle_enemy_first_row(rules), nv_vec3(0.6f, 0.25f, 0.2f));
@@ -993,6 +997,18 @@ void view_panel(Game* game)
         if (!lab) {
             igSameLine(0.0f, -1.0f);
             igTextDisabled("%s", phases[battle->phase]);
+        }
+        if (!game->editor) {
+            // Back to the main menu (docs/specs/main_menu.md), at the line's right end.
+            char label[64];
+            icon_label(label, sizeof(label), NV_ICON_HOUSE, T("Main menu"), "main menu");
+            f32 width = button_width(label);
+            igSameLine(0.0f, -1.0f);
+            f32 room = igGetContentRegionAvail().x;
+            if (room > width)
+                igSetCursorPosX(igGetCursorPosX() + room - width);
+            if (igButton(label, (ImVec2_c){0, 0}))
+                game_set_screen(game, GAME_SCREEN_MENU);
         }
         mode_buttons(game);
 

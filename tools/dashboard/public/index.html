@@ -261,12 +261,14 @@ const DOWN_AFTER = 3; // failed connects before the page says live updates are p
 const STRINGS = {
   en: {
     title: "nv builds",
-    lead: "Every build CI has published: master's builds first, then each pull request's, each with a Release and a Debug build. Pushes, pull requests and CI results show up here within seconds.",
+    lead: "Every build CI has published: master's first, then each pull request's. Each opens as the game (from the main menu) or the editor (straight into the battle and its panel). Pushes, pull requests and CI results show up here within seconds.",
     live: "Live", connecting: "Connecting", retry: s => `Reconnecting in ${s} s`, paused: "Live updates paused",
     paused_banner: (when, s) => `Live updates are paused because the connection to the server keeps failing. The list is as of ${when}. Trying again in ${s} s.`,
     default_branch: "Default branch",
     autobattler: "Auto-battler",
-    release: "Release", debug: "Debug",
+    game: "Game", editor: "Editor",
+    game_tip: "The game, from its main menu",
+    editor_tip: "The same build, straight into the battle and its panel (?editor)",
     activity_h: "Activity",
     activity_note: "What changed since you opened the page",
     activity_none: "Nothing yet. A push, a pull request or a CI result appears here as it happens.",
@@ -288,7 +290,7 @@ const STRINGS = {
     show_them: "Show them",
     meter_label: used => `${used} of 10 GB free used`,
     branches_h: "Builds",
-    branches_note: "master first, then each pull request's branch, each with a Release and a Debug build. Deleting the branch removes its builds.",
+    branches_note: "master first, then each pull request's branch. Game and Editor open the same Release build. Deleting the branch removes its build.",
     search: "Filter by pull request, branch or commit",
     f_all: "All", f_open: "master + open PRs", f_work: "Not in master", f_merged: "In master",
     sort: "Sort", s_newest: "Newest", s_name: "Name", s_size: "Size",
@@ -308,12 +310,14 @@ const STRINGS = {
   },
   ko: {
     title: "nv 빌드",
-    lead: "CI가 게시한 모든 빌드입니다. master가 먼저, 그다음 PR마다 Release·Debug 빌드가 있습니다. push, PR, CI 결과가 몇 초 안에 여기에 나타납니다.",
+    lead: "CI가 게시한 모든 빌드입니다. master가 먼저, 그다음 PR마다 하나씩입니다. 빌드마다 게임(메인 메뉴부터)이나 에디터(바로 전투와 패널)로 엽니다. push, PR, CI 결과가 몇 초 안에 여기에 나타납니다.",
     live: "실시간", connecting: "연결 중", retry: s => `${s}초 후 재연결`, paused: "실시간 갱신 중지",
     paused_banner: (when, s) => `서버와의 연결이 계속 실패해 실시간 갱신이 멈췄습니다. 목록은 ${when} 기준입니다. ${s}초 후 다시 시도합니다.`,
     default_branch: "기본 브랜치",
     autobattler: "오토배틀러",
-    release: "Release", debug: "Debug",
+    game: "Game", editor: "Editor",
+    game_tip: "메인 메뉴부터 시작하는 게임",
+    editor_tip: "같은 빌드를 바로 전투와 패널로 (?editor)",
     activity_h: "활동",
     activity_note: "페이지를 연 뒤로 바뀐 것",
     activity_none: "아직 없습니다. push, PR, CI 결과가 생기는 대로 여기에 나타납니다.",
@@ -335,7 +339,7 @@ const STRINGS = {
     show_them: "보기",
     meter_label: used => `무료 10 GB 중 ${used} 사용`,
     branches_h: "빌드",
-    branches_note: "master가 먼저, 그다음 PR 브랜치마다 Release·Debug 빌드가 있습니다. 브랜치를 지우면 빌드도 지워집니다.",
+    branches_note: "master가 먼저, 그다음 PR 브랜치마다 하나씩입니다. Game과 Editor는 같은 Release 빌드를 엽니다. 브랜치를 지우면 빌드도 지워집니다.",
     search: "PR, 브랜치, 커밋으로 찾기",
     f_all: "전체", f_open: "master + 열린 PR", f_work: "master에 없음", f_merged: "master에 있음",
     sort: "정렬", s_newest: "최신순", s_name: "이름순", s_size: "크기순",
@@ -524,8 +528,9 @@ function renderMeter() {
 function buttons(name, build) {
   if (!build) return `<span class="none">${t("no_build")}</span>`;
   const base = `/builds/${encodeURIComponent(folder(name))}`;
-  return `<a class="btn primary" href="${base}/release/" target="_blank" rel="noopener">${t("release")}<span class="size">${mb(build.release)}</span></a>
-        <a class="btn" href="${base}/debug/" target="_blank" rel="noopener">${t("debug")}<span class="size">${mb(build.debug)}</span></a>`;
+  // One Release build: the game starts at its main menu, ?editor straight in the battle (docs/specs/main_menu.md).
+  return `<a class="btn primary" href="${base}/release/" target="_blank" rel="noopener" title="${esc(t("game_tip"))}">${t("game")}<span class="size">${mb(build.release)}</span></a>
+        <a class="btn" href="${base}/release/?editor" target="_blank" rel="noopener" title="${esc(t("editor_tip"))}">${t("editor")}</a>`;
 }
 
 function label(b) {

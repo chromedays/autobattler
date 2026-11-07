@@ -2,7 +2,7 @@
 // and CI's build records, and pushes every change to the open pages over a WebSocket. One Durable Object holds the state
 // and the sockets; the logic itself is in state.mjs.
 import { DurableObject } from 'cloudflare:workers';
-import { applyBuild, applyResync, applyWebhook, emptyState, snapshot } from './state.mjs';
+import { applyBuild, applyResync, applyWebhook, emptyState, folderOf, snapshot } from './state.mjs';
 
 const RESYNC_MS = 5 * 60 * 1000;
 const BRANCH_PAGES = 5; // 500 branches at most; past that the resync deletes nothing
@@ -70,6 +70,8 @@ export class Dashboard extends DurableObject {
 
   async addBuild(record) {
     await this.commit(applyBuild(this.data, record));
+    // Until 2026-11-06 a Debug build went beside the Release one; a branch's next build takes its old one out of the bucket.
+    await deletePrefix(this.env.BUILDS, `builds/${folderOf(record.branch)}/debug/`);
   }
 
   state() {
@@ -153,7 +155,7 @@ async function deletePrefix(bucket, prefix) {
 
 const TYPES = { html: 'text/html; charset=utf-8', js: 'text/javascript', wasm: 'application/wasm', json: 'application/json', data: 'application/octet-stream' };
 
-// /builds/<folder>/<release|debug>/<file>, from the bucket. The file names are not hashed, so every response is
+// /builds/<folder>/release/<file>, from the bucket. The file names are not hashed, so every response is
 // revalidated (an unchanged file answers 304 by its ETag).
 async function serveBuild(request, env, url) {
   if (request.method !== 'GET' && request.method !== 'HEAD') return status(405);
